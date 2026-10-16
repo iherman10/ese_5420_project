@@ -13,7 +13,7 @@ No analysis code exists yet — the repo is currently docs plus an empty Python 
 - `docs/analysis_plan.md` — **the authoritative spec.** Where it disagrees with `docs/project_ideas/hospital_stays/` (background research and sources), the plan wins. Check its "Open decisions" list before choosing subsample size, race/payer groupings, or facility exclusions.
 - `docs/proposal.md` — submitted proposal.
 - `docs/project_requirements.md` — course rules (methods must come from course modules; paper needs an AI-use statement in the acknowledgements).
-- `docs/project_ideas/project_guide.html` is generated and gitignored. `CLAUDE.md` is also gitignored.
+- `docs/project_ideas/project_guide.html` is generated and gitignored.
 
 ## Environment
 
