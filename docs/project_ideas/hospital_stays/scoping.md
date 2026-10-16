@@ -2,7 +2,7 @@
 
 *Session date: 2026-10-15*
 
-Summary of the first discussion of project idea E3 from `project_ideas/project_guide.html`: what "fairly" means, whether the temporal holdout is needed, and which data to use.
+Summary of the first discussion of project idea E3 from `docs/project_ideas/project_guide.html`: what "fairly" means, whether the temporal holdout is needed, and which data to use.
 
 ## Decisions
 

@@ -193,6 +193,24 @@ These are assigned from the final coded record, after the stay. Using them makes
   - Values are "1"–"119" plus "120+" (2,404 rows).
 - **Discharge Year:** constant within a file.
 
+## Licence and terms of use
+
+*Checked 2026-10-15.*
+
+**Verdict:** the OPEN-NY Terms of Use permit our use, including publishing figures derived from the data, with no pre-approval.
+
+- **Licence field:** the 2024 metadata gives the licence only as "See Terms of Use" (`SEE_TERMS_OF_USE`), with no link to the terms. Attribution: "New York State Department of Health", linking to health.ny.gov/statistics/sparcs. The 2023 page hasn't been checked but is almost certainly the same.
+- **Governing terms:** OPEN-NY Terms of Use, last modified 8 March 2013. The copy we read is hosted on data.ny.gov. We assume health.data.ny.gov, part of the same OPEN-NY program, uses the same terms; its footer link hasn't been checked.
+- **Licence grant:** "a non-exclusive, revocable license to use the Content … in a manner consistent with the Terms of Use." The preamble says to use it "however you wish," as long as the use is lawful.
+- **Redistribution and derived figures:** allowed. The terms "do not contain restrictions requiring members of the public to use attribution, to re-post the license terms with any re-uses of the data, to impose share-alike or technical restrictions, nor require the public to obtain pre-approval before re-use."
+- **Attribution:** not required. We'll credit NYSDOH SPARCS anyway.
+- **Exclusions:** State logos, the State seal and trademarks are not licensed, so keep them out of the paper. The State can revoke the licence or tell a user to stop using the data.
+- **No warranty:** the State makes no warranty about accuracy, and doesn't vouch "for the quality or accuracy of any analyses or re-uses."
+- **Dataset-specific terms:** the ToU allow other terms to be imposed on specific Content. The 2024 Overview PDF has none: no rules on use, citation, re-identification or small cells. The data dictionary and release notes haven't been checked.
+- **Data use agreement:** the SPARCS data use agreement, which bans attempts to identify individuals, applies only to the limited and identifiable tiers. The public de-identified file has none. We'll still avoid publishing very small cells.
+
+**Proposal wording:** "Public, de-identified NYSDOH SPARCS file on health.data.ny.gov, released under the OPEN-NY Terms of Use, which permit reuse and redistribution of derived figures without pre-approval; attribution to NYSDOH SPARCS given as good practice."
+
 ## Transformations the publisher already applied
 
 - **Dates:** only the discharge year is released, so there is no month, day of week or seasonality.
@@ -366,4 +384,6 @@ Payer and safety-net status will partly proxy for discharge delays. This matters
 - [2024 Data Dictionary PDF](https://health.data.ny.gov/api/views/sf4k-39ay/files/a768e7f9-db7a-42ce-bedc-e2c88186c687?download=true&filename=NYSDOH_SPARCS_De-Identified_Data_Dictionary_2024.pdf)
 - [2024 Overview PDF](https://health.data.ny.gov/api/views/sf4k-39ay/files/4569ea58-f227-4251-8d10-869f070c0444?download=true&filename=NYSDOH_SPARCS_De-Identified_Overview_2024.pdf)
 - [Release notes (xlsx)](https://health.data.ny.gov/api/views/sf4k-39ay/files/51682576-a3d1-405b-a988-4d82b3a3a354)
+- [OPEN-NY Terms of Use (PDF)](https://data.ny.gov/download/77gx-ii52/application/pdf)
+- [SPARCS data access tiers](https://healthweb-back.health.ny.gov/statistics/sparcs/access/)
 - [Reilly et al. 2018, SPARCS race data quality (NYC DOHMH)](https://www.nyc.gov/assets/doh/downloads/pdf/survey/epiresearch-sparcs-imputation.pdf)

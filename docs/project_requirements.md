@@ -1,6 +1,6 @@
 # Final Project Requirements — ESE 5420 (Fall 2026)
 
-Source: course syllabus (ESE 5420, Statistics for Data Science, Prof. Victor M. Preciado), with notes from the project field guide in `project_ideas/`.
+Source: course syllabus (ESE 5420, Statistics for Data Science, Prof. Victor M. Preciado), with notes from the project field guide in `docs/project_ideas/`.
 
 ## Overview
 
