@@ -34,6 +34,6 @@ VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebo
 - **Pooling 2023 + 2024:** rename `hospital_service_area` → `health_service_area` and `zip_code_3_digits` → `zip_code`; strip thousands commas from 2023 charge columns; add a year indicator.
 - **Never use as features (leakage):** total charges/costs, patient disposition, APR severity of illness, APR risk of mortality, APR-DRG, CCSR procedure, birth weight.
 - **Encoding:** all features are categorical — one-hot with rare levels grouped into "Other", never integer label-encoding; fit encoders on training data only.
-- **Splits:** random 80/20 train/test stratified on the target; K-fold CV on train for tuning; a held-back training slice for Platt scaling; the test set is used once, and all models are scored on the same test rows.
+- **Splits:** random 80/20 train/test stratified on the target; K-fold CV on train for tuning; a held-back training slice for recalibration (Platt scaling and isotonic regression); the test set is used once, and all models are scored on the same test rows.
 - Every model outputs probabilities. AUC above ~0.9 suggests leakage (published benchmarks are 0.75–0.81).
 - Credit NYSDOH SPARCS; no State logos or seals in the paper.

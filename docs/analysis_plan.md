@@ -70,7 +70,7 @@ MDC, medical/surgical and diagnosis are coded at discharge. They stand in for th
 - **Train/test:** a random 80/20 split, stratified on the target.
   - This isn't time-series data: rows are near-independent stays with no dates or patient IDs. So a random split is an honest evaluation, and no temporal holdout is needed.
 - **Tuning:** hyperparameters are tuned with K-fold cross-validation on the training set.
-- **Recalibration slice:** a slice of the training set is held back to fit Platt scaling.
+- **Recalibration slice:** a slice of the training set is held back to fit the recalibrators (Platt scaling and isotonic regression).
 - **Test set:** used once, at the end. Every model is scored on the same test rows.
 
 ## Models
@@ -101,9 +101,11 @@ All features are categorical. One-hot encode them, grouping rare levels into "Ot
      - Above: it under-predicts.
      - An S-shape: the model is over-confident.
    - **Recalibration:**
-     - **Method:** Platt scaling, a one-variable logistic regression on the model's score, fit on the held-back training slice.
-     - **What to plot:** calibration curves before and after, for every model.
-     - **Effect on AUC:** none, because Platt scaling doesn't change the order of patients.
+     - **Methods:** two recalibrators, each fit on the held-back training slice:
+       - Platt scaling: a one-variable logistic regression on the model's score. It fits a single S-shaped curve, so it fixes simple over- or under-confidence.
+       - Isotonic regression: a non-decreasing step function of the model's score. It can fit any monotone shape, so it shows whether a model has calibration errors Platt scaling can't fix.
+     - **What to plot:** calibration curves before and after each recalibrator, for every model.
+     - **Effect on AUC:** none for Platt scaling, because it doesn't change the order of patients. Isotonic regression maps nearby scores to the same value, and those ties can shift AUC slightly; report the change.
      - **Expected result:** boosted trees improve the most.
 3. **Fairness.**
    - **What to compute:** calibration curves and AUC repeated by payer (Medicaid vs. commercial = Private + Blue Cross, with Medicare for context) and by race.
