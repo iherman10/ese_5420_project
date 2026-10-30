@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ESE 5420 (Statistics for Data Science, Fall 2026) solo final project: predicting whether an unplanned New York hospital admission lasts more than 7 days (NYSDOH SPARCS inpatient discharges, 2023–24 pooled), comparing course models on AUC and calibration, with a fairness check by payer and race. Deliverable is a ≤6-page NeurIPS-format paper plus a 5-minute video, due Fri 11 Dec 2026; early draft due Fri 6 Nov 2026.
 
-No analysis code exists yet — the repo is currently docs plus an empty Python environment.
+Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw CSVs into `data/raw/` (gitignored) and checks the proposal's data claims.
 
 ## Docs
 
@@ -30,7 +30,7 @@ VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebo
 ## Rules from the analysis plan that code must respect
 
 - **Scope:** keep emergency, urgent and trauma admissions; drop elective, newborn and "Not Available" admission types.
-- **Target:** `y = 1` if length of stay ≥ 8. LOS is text with a top value of `"120+"`.
+- **Target:** `y = 1` if length of stay ≥ 8. LOS is text with a top value of `"120 +"` (2023) or `"120+"` (2024).
 - **Pooling 2023 + 2024:** rename `hospital_service_area` → `health_service_area` and `zip_code_3_digits` → `zip_code`; strip thousands commas from 2023 charge columns; add a year indicator.
 - **Never use as features (leakage):** total charges/costs, patient disposition, APR severity of illness, APR risk of mortality, APR-DRG, CCSR procedure, birth weight.
 - **Encoding:** all features are categorical — one-hot with rare levels grouped into "Other", never integer label-encoding; fit encoders on training data only.

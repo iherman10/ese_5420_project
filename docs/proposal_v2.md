@@ -21,7 +21,7 @@ Bed managers and discharge planners could use a calibrated early estimate of whi
 NYSDOH SPARCS Hospital Inpatient Discharges (de-identified), one row per inpatient stay, 33 columns, 2023 and 2024 pooled with a year indicator:
 https://health.data.ny.gov/d/46xm-urtu (2023, 2,125,754 stays)
 https://health.data.ny.gov/d/sf4k-39ay (2024, 2,196,737 stays)
-Keeping only emergency, urgent and trauma admissions leaves about 3.3M stays, about 20% of which last more than 7 days (the target). The inputs are 17 categorical columns known roughly near admission: age group, gender, race, ethnicity, 3-digit ZIP, three payer fields, admission type, ED indicator, facility, county, health service area, body system (APR MDC), medical vs. surgical, principal diagnosis (CCSR) and discharge year. Charges, costs, disposition, severity, mortality risk, APR-DRG and procedure are excluded as leakage.
+Keeping only emergency, urgent and trauma admissions leaves about 3.2M stays, about 23% of which last more than 7 days (the target). The inputs are 17 categorical columns known roughly near admission: age group, gender, race, ethnicity, 3-digit ZIP, three payer fields, admission type, ED indicator, facility, county, health service area, body system (APR MDC), medical vs. surgical, principal diagnosis (CCSR) and discharge year. Charges, costs, disposition, severity, mortality risk, APR-DRG and procedure are excluded as leakage.
 
 ## Baseline
 
@@ -41,7 +41,7 @@ Calibration curves on the test set: x-axis is mean predicted probability of a st
 
 ## Risks and fallback
 
-The slower models (random forest, MLP, stacking) may be too slow on 3.3M rows, so I will fit on a random subsample of a few hundred thousand, checking that the fairness subgroups stay large enough. Flexible models may not beat logistic regression, and there may be no gap between groups; both would be reported as findings. Fallback paper: logistic regression against gradient-boosted trees only, with AUC and calibration before and after Platt scaling and isotonic regression, overall and by payer.
+The slower models (random forest, MLP, stacking) may be too slow on 3.2M rows, so I will fit on a random subsample of a few hundred thousand, checking that the fairness subgroups stay large enough. Flexible models may not beat logistic regression, and there may be no gap between groups; both would be reported as findings. Fallback paper: logistic regression against gradient-boosted trees only, with AUC and calibration before and after Platt scaling and isotonic regression, overall and by payer.
 
 ## Who does what
 

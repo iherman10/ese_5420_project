@@ -26,7 +26,7 @@ For unplanned (emergency, urgent or trauma) admissions to New York hospitals, ho
 
 | Rows | Decision |
 | :--- | :--- |
-| Emergency, urgent and trauma admissions | **Keep.** About 3.3M stays across both years |
+| Emergency, urgent and trauma admissions | **Keep.** About 3.2M stays across both years |
 | Elective admissions | Drop. Their length of stay is largely planned |
 | Newborns | Drop. Their stays work differently |
 | "Not Available" admission type | Drop |
@@ -37,11 +37,11 @@ The analysis will probably use a random subsample of a few hundred thousand rows
 **Cleanup when pooling the two years:**
 - Rename `hospital_service_area` → `health_service_area` and `zip_code_3_digits` → `zip_code`.
 - Strip the thousands commas from the 2023 charge columns.
-- Convert the text columns to numbers. Length of stay is stored as text, and its top value is "120+".
+- Convert the text columns to numbers. Length of stay is stored as text, and its top value is "120 +" in 2023 and "120+" in 2024.
 
 ## Target and features
 
-- **Target:** $y = 1$ if length of stay > 7 days (LOS ≥ 8), else 0. About 20% of stays are positive.
+- **Target:** $y = 1$ if length of stay > 7 days (LOS ≥ 8), else 0. About 23% of stays are positive.
 - **Output:** every model predicts a probability, not just a label.
 
 **Features.** These are roughly what staff know near the time of admission:
