@@ -44,6 +44,11 @@ uv run python script.py
 
 VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebook working directory.
 
+## Git
+
+- Commit and push directly to `main`, unless the user has said to work on a separate branch.
+- On a separate branch, push only to that branch, and don't merge it until the user says to.
+
 ## Rules from the analysis plan that code must respect
 
 These apply unless a newer note changes them.
