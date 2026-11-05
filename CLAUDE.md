@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-ESE 5420 (Statistics for Data Science, Fall 2026) solo final project: predicting whether an unplanned New York hospital admission lasts more than 7 days (NYSDOH SPARCS inpatient discharges, 2023–24 pooled), comparing course models on AUC and calibration, with a fairness check by payer and race. Deliverable is a ≤6-page NeurIPS-format paper plus a 5-minute video, due Fri 11 Dec 2026; early draft due Fri 6 Nov 2026.
+ESE 5420 (Statistics for Data Science, Fall 2026) solo final project: predicting whether an unplanned New York hospital admission lasts more than 7 days (NYSDOH SPARCS inpatient discharges, 2023–24 pooled), comparing course models on AUC and calibration, with a fairness check by payer and race. Deliverable is a ≤6-page NeurIPS-format paper plus a 5-minute video.
 
 Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw CSVs into `data/raw/` (gitignored) and checks the proposal's data claims.
 
 ## Docs
 
-- `docs/notes/` — dated project notes (see below). Start with `2026-10-30-original-analysis-plan.md`; check its "Open decisions" list before choosing subsample size, race/payer groupings, or facility exclusions.
+- `docs/notes/` — dated project notes (see below). Read `2026-10-30-original-analysis-plan.md` and any newer notes before writing analysis code or making analysis decisions.
 - `docs/course_materials/proposal.md` — submitted proposal.
 - `docs/course_materials/proposal_v2.txt` — re-submitted proposal in the topic-guide template (topics 20 and 23).
 - `docs/course_materials/topic_guide.md` — instructor's research topic guide and project rules.
@@ -66,16 +66,3 @@ In the execute command, `--set-kernel python3` uses the kernel inside `.venv`, s
 
 - Commit and push directly to `main`, unless the user has said to work on a separate branch.
 - On a separate branch, push only to that branch, and don't merge it until the user says to.
-
-## Rules from the analysis plan that code must respect
-
-These apply unless a newer note changes them.
-
-- **Scope:** keep emergency, urgent and trauma admissions; drop elective, newborn and "Not Available" admission types.
-- **Target:** `y = 1` if length of stay ≥ 8. LOS is text with a top value of `"120 +"` (2023) or `"120+"` (2024).
-- **Pooling 2023 + 2024:** rename `hospital_service_area` → `health_service_area` and `zip_code_3_digits` → `zip_code`; strip thousands commas from 2023 charge columns; add a year indicator.
-- **Never use as features (leakage):** total charges/costs, patient disposition, APR severity of illness, APR risk of mortality, APR-DRG, CCSR procedure, birth weight.
-- **Encoding:** all features are categorical — one-hot with rare levels grouped into "Other", never integer label-encoding; fit encoders on training data only.
-- **Splits:** random 80/20 train/test stratified on the target; K-fold CV on train for tuning; a held-back training slice for recalibration (Platt scaling and isotonic regression); the test set is used once, and all models are scored on the same test rows.
-- Every model outputs probabilities. AUC above ~0.9 suggests leakage (published benchmarks are 0.75–0.81).
-- Credit NYSDOH SPARCS; no State logos or seals in the paper.
