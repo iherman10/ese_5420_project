@@ -1,6 +1,9 @@
 # Modeling Plan: Predicting Long Hospital Stays
 
-*Drafted 2026-10-15. Builds on the decisions in `scoping.md` and the Summary of `dataset_overview.md`.*
+Created: 2026-10-15
+Scope: Early modeling plan for predicting long hospital stays.
+
+*Builds on the decisions in `2026-10-15-scoping.md` and the Summary of `2026-10-15-dataset-overview.md`.*
 
 ## The prediction task
 

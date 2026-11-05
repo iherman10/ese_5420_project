@@ -1,6 +1,7 @@
 # Analysis Plan: Predicting Long Hospital Stays in New York
 
-*Current official reference for the project, last updated 2026-10-15. Where it disagrees with the working notes in `docs/project_ideas/hospital_stays/`, this document wins. Those notes hold the background research and sources.*
+Created: 2026-10-15 (last edited 2026-10-30)
+Scope: The original plan for the project's question, data, models and evaluation, plus open decisions.
 
 ## Question
 
@@ -138,12 +139,12 @@ Mixed or null results, such as the flexible models not beating logistic regressi
 
 - **Hindsight comparison:** add APR-DRG, procedure, severity and mortality risk as a second feature set, and report how much they inflate AUC.
 - **Temporal check:** train on 2023, test on 2024.
-- **Psychiatric per diem appendix:** length-of-stay histograms for psychiatric stays (MDC 19) by payer, looking for spikes at payment-change days. This is descriptive only; see `psych_per_diem.md`.
+- **Psychiatric per diem appendix:** length-of-stay histograms for psychiatric stays (MDC 19) by payer, looking for spikes at payment-change days. This is descriptive only; see `2026-10-15-psych-per-diem.md`.
 
 ## Deliverables
 
 | Stage | Due |
 | :--- | :--- |
-| Proposal (`docs/proposal.md`) | Fri 16 Oct 2026 |
+| Proposal (`docs/course_materials/proposal.md`) | Fri 16 Oct 2026 |
 | Early draft | Fri 6 Nov 2026 |
 | Paper (≤ 6 pages, NeurIPS format) + 5-minute video | Fri 11 Dec 2026 |

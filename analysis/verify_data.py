@@ -1,4 +1,4 @@
-"""Verify the data claims in docs/proposal_v2.md.
+"""Verify the data claims in docs/course_materials/proposal_v2.txt.
 
 Downloads the 2023 and 2024 SPARCS inpatient discharge CSVs into data/raw/
 (if not already there) and prints row/column counts, admission-type mix,

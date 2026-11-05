@@ -10,10 +10,27 @@ Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw 
 
 ## Docs
 
-- `docs/analysis_plan.md` — **the authoritative spec.** Where it disagrees with `docs/project_ideas/hospital_stays/` (background research and sources), the plan wins. Check its "Open decisions" list before choosing subsample size, race/payer groupings, or facility exclusions.
-- `docs/proposal.md` — submitted proposal.
-- `docs/project_requirements.md` — course rules (methods must come from course modules; paper needs an AI-use statement in the acknowledgements).
-- `docs/project_ideas/project_guide.html` is generated and gitignored.
+- `docs/notes/` — dated project notes (see below). Start with `2026-10-30-original-analysis-plan.md`; check its "Open decisions" list before choosing subsample size, race/payer groupings, or facility exclusions.
+- `docs/course_materials/proposal.md` — submitted proposal.
+- `docs/course_materials/proposal_v2.txt` — re-submitted proposal in the topic-guide template (topics 20 and 23).
+- `docs/course_materials/topic_guide.md` — instructor's research topic guide and project rules.
+- `docs/course_materials/project_requirements.md` — course rules (methods must come from course modules; paper needs an AI-use statement in the acknowledgements).
+- `docs/notes/2026-10-14-project-guide.html` is generated and gitignored.
+
+## Notes
+
+Before implementing the next part of the project, record its key decisions in a new note.
+
+- Put notes directly under `docs/notes/`, with no subfolders, as Markdown files named `YYYY-MM-DD-short-topic.md`.
+- Start each note with this header; everything below it is free-form:
+
+  ```markdown
+  # Title
+  Created: YYYY-MM-DD
+  Scope: What this note covers.
+  ```
+
+- Notes are a dated record, not a living spec. When a decision changes, write a new note rather than revising the old one; the newest note on a topic wins.
 
 ## Environment
 
@@ -28,6 +45,8 @@ uv run python script.py
 VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebook working directory.
 
 ## Rules from the analysis plan that code must respect
+
+These apply unless a newer note changes them.
 
 - **Scope:** keep emergency, urgent and trauma admissions; drop elective, newborn and "Not Available" admission types.
 - **Target:** `y = 1` if length of stay ≥ 8. LOS is text with a top value of `"120 +"` (2023) or `"120+"` (2024).

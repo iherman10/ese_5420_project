@@ -1,5 +1,8 @@
 # Psychiatric Stays and Declining Per Diem Payments
 
+Created: 2026-10-15
+Scope: Optional side angle on psychiatric stays and declining per diem payments.
+
 *Researched 2026-10-15 from published rules, agency reports and literature (web research only, no data analysis). Optional side angle for the hospital-stays project.*
 
 ## Summary

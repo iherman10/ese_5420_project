@@ -1,5 +1,8 @@
 # SPARCS Inpatient Discharges: Dataset Overview
 
+Created: 2026-10-15
+Scope: What the SPARCS inpatient discharge data contains, from its documentation and published literature.
+
 *Compiled 2026-10-15 from the official documentation (Socrata metadata, data dictionary, overview PDF, release notes) and published literature. A few aggregate count queries against the public API filled gaps in the documentation; no record-level data has been downloaded yet.*
 
 ## Summary
