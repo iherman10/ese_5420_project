@@ -52,8 +52,7 @@ Notebooks are paired with percent-format `.py` files of the same name through `[
 
 - Edit the `.py` file, using `# %%` for code cells and `# %% [markdown]` for markdown cells, then sync so the `.ipynb` matches. Never let the two drift.
 - Only the `.ipynb` holds outputs, and syncing keeps old outputs, so re-execute after changing code.
-- Commit the `.py` and `.ipynb` together. Resolve a merge conflict in the `.py`, then re-execute to rebuild the `.ipynb`.
-- Notebooks are committed but `data/` isn't, so outputs should show aggregates, not patient-level rows.
+- Commit the `.py` and `.ipynb` together.
 
 ```bash
 uv run jupytext --sync analysis/<name>.py                 # sync .py -> .ipynb (pass the .ipynb to sync the other way)
