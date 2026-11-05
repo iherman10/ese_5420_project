@@ -3,5 +3,7 @@ docs/notes/2026-10-14-project-guide.html
 .venv/
 __pycache__/
 .ipynb_checkpoints/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 data/

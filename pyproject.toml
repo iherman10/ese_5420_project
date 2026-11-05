@@ -10,4 +10,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel>=7.4.0",
+    "jupytext>=1.19.6",
+    "nbconvert>=7.17.2",
 ]
+
+[tool.jupytext]
+formats = "ipynb,py:percent"

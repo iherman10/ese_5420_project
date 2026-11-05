@@ -44,6 +44,25 @@ uv run python script.py
 
 VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebook working directory.
 
+New machine: install uv, clone, run `uv sync`, then `uv run python analysis/verify_data.py` to re-download `data/`. Accept VS Code's prompt to install the recommended extension.
+
+## Notebooks
+
+Notebooks are paired with percent-format `.py` files of the same name through `[tool.jupytext]` in `pyproject.toml`. Plain scripts such as `analysis/verify_data.py` have no pair and stay plain scripts.
+
+- Edit the `.py` file, using `# %%` for code cells and `# %% [markdown]` for markdown cells, then sync so the `.ipynb` matches. Never let the two drift.
+- Only the `.ipynb` holds outputs, and syncing keeps old outputs, so re-execute after changing code.
+- Commit the `.py` and `.ipynb` together. Resolve a merge conflict in the `.py`, then re-execute to rebuild the `.ipynb`.
+- Notebooks are committed but `data/` isn't, so outputs should show aggregates, not patient-level rows.
+
+```bash
+uv run jupytext --sync analysis/<name>.py                 # sync .py -> .ipynb (pass the .ipynb to sync the other way)
+uv run jupytext --to ipynb --set-kernel python3 --execute --run-path . analysis/<name>.py   # rebuild and execute end to end
+uv run python analysis/<name>.py                          # quick run without Jupyter
+```
+
+In the execute command, `--set-kernel python3` uses the kernel inside `.venv`, so nothing needs registering per machine, and `--run-path .` runs from the repo root, matching VS Code.
+
 ## Git
 
 - Commit and push directly to `main`, unless the user has said to work on a separate branch.
