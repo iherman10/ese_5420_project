@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.19.6
 #   kernelspec:
-#     display_name: ese-5420-project (3.13.x)
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -25,6 +25,7 @@ import urllib.request
 from pathlib import Path
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 SEED = 42
 
@@ -327,4 +328,51 @@ for column in ["discharge_year", "type_of_admission", "payment_typology_1", "rac
         }
     )
     print((shares * 100).round(2).to_string())
+    print()
+
+# %% [markdown]
+# ## Step 3: Split
+#
+# We split the sample into three sets, keeping the long-stay rate the same in each:
+#
+# - **Train (360,000):** fitting, and K-fold CV for tuning. CV does the job of a
+#   validation set, so there isn't a separate one.
+# - **Recalibration (40,000):** fitting Platt scaling and isotonic regression only.
+# - **Test (100,000):** final scoring, once, on the same rows for every model. It
+#   stays untouched until the end, so the baseline checkpoint score comes from CV
+#   on the training set.
+#
+# We take the test set off first, then take the recalibration set from what's left.
+
+# %%
+TRAIN_SIZE = 360_000
+RECAL_SIZE = 40_000
+TEST_SIZE = 100_000
+
+train_recal, test = train_test_split(
+    sample, test_size=TEST_SIZE, stratify=sample["y"], random_state=SEED
+)
+train, recal = train_test_split(
+    train_recal, test_size=RECAL_SIZE, stratify=train_recal["y"], random_state=SEED
+)
+del train_recal
+
+splits = {"train": train, "recalibration": recal, "test": test}
+assert [len(df) for df in splits.values()] == [TRAIN_SIZE, RECAL_SIZE, TEST_SIZE]
+assert train.index.union(recal.index).union(test.index).size == SAMPLE_SIZE
+
+# %% [markdown]
+# Is the long-stay rate the same in each set?
+
+# %%
+for name, df in splits.items():
+    print(f"{name}: {len(df):,} stays, {df['y'].mean():.2%} long")
+
+# %% [markdown]
+# How many test stays will each fairness group have? These are counts only, so
+# they don't use any test-set outcomes.
+
+# %%
+for column in ["payment_typology_1", "race"]:
+    print(test[column].value_counts(dropna=False).to_string())
     print()
