@@ -116,6 +116,7 @@ Keep it as its own level. It has 0 long stays among 1,171 in train, so it's sepa
 - AUC and Brier score, each as the mean and spread across the 5 folds.
 - One calibration curve from the out-of-fold predictions.
 - AUC compared with the published range of 0.75–0.81.
+- Precision and recall at the default 0.5 threshold, from the out-of-fold predictions, for awareness only and not for choosing models.
 
 This brings the Brier score back in, which the 30 Oct plan had left out. Accuracy isn't used, because always predicting "not long" already scores about 77%.
 
