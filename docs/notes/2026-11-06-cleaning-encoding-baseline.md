@@ -1,7 +1,7 @@
 # Cleaning, Encoding and Baseline
 
-Created: 2026-11-06
-Scope: Decisions for cleaning and encoding the training data, fitting the baseline model and evaluating it (steps 4–6 toward the baseline checkpoint), plus what's still open.
+Created: 2026-11-06 (last edited 2026-11-07)
+Scope: Decisions for cleaning and encoding the training data, fitting the baseline model and evaluating it (steps 4–6 toward the baseline checkpoint), plus how fairness results will be reported.
 
 ## Ground rules
 
@@ -71,9 +71,39 @@ MDC, medical/surgical and CCSR diagnosis are recorded at discharge. They stand i
 ## Step 5: Encode
 
 - One-hot encode all 17 features with scikit-learn's `OneHotEncoder`. Never use integer label-encoding.
-- Group rare levels into "Other". New levels in other sets also go to "Other". The cutoff is still open (see below).
-- **Baseline only:** use `drop="first"`, which drops the alphabetically first level that isn't rare as the reference. This is revisited for the penalized and tree models.
+- Group any level with fewer than 100 training stays into "Other". New levels in validation folds, the recalibration set or the test set also go to "Other".
+- **Baseline only:** use `drop="first"`, which drops the alphabetically first level that isn't rare as the reference. This and the cutoff are revisited for the penalized and tree models.
+- **Encoder settings:** `OneHotEncoder(min_frequency=100, handle_unknown="infrequent_if_exist", drop="first")`.
 - Keep all overlapping features, such as facility and county. Their coefficients won't be interpreted, because this overlap means they still aren't uniquely identified after dropping a level.
+
+**Why a cutoff of 100**
+
+No standard sets a per-level minimum, so 100 is our judgment, and the paper will say so. We chose it before seeing any model results, and it uses counts only, not outcomes.
+
+Counts on the training set, after the Step 4 label fixes and blank handling:
+
+| | No grouping (scikit-learn default) | Cutoff of 100 |
+| :--- | ---: | ---: |
+| Levels | 838 | 632 |
+| Columns with `drop="first"` | 821 | 615 |
+| Long stays per parameter | 101 | 135 |
+| Levels with 0 long stays | 44 | 1 |
+| Levels where every stay is long | 6 | 0 |
+| Levels with under 5 stays | 42 | 0 |
+
+We aren't using scikit-learn's default for three reasons:
+
+- It doesn't group rare levels, so a level with 1 stay gets a coefficient from that one patient.
+- 50 levels would be separated instead of 1.
+- Its `handle_unknown="error"` setting stopped all 5 CV folds, because each validation fold had levels its training fold hadn't seen.
+
+**PRG026**
+
+Keep it as its own level. It has 0 long stays among 1,171 in train, so it's separated and its coefficient has no finite best value.
+
+- **Why not merge it into "Other":** that would use the outcome to shape a feature, and because the decision would use all of train, the validation folds' outcomes would feed into it.
+- **Why not add a penalty:** the baseline would no longer be unpenalized.
+- **Follow-through:** check that the fit converges, don't interpret the coefficient and note it in the paper. If the fit doesn't converge, come back to this decision.
 
 ## Step 6: Fit and evaluate the baseline
 
@@ -97,12 +127,12 @@ This brings the Brier score back in, which the 30 Oct plan had left out. Accurac
 
 **Error bars:** the spread across folds for now. Bootstrap intervals on the test set come at the end.
 
-## Still open
+## Fairness reporting
 
-- **Rare-level cutoff:** must be decided before the baseline is fit. It needs to be set before seeing any model results.
-- **Diagnoses with almost no long stays:** PRG026 has 0 long stays among 1,171 in train, so its coefficient has no finite best value in an unpenalized model. Decide this with the cutoff.
-- **Recall and precision:** whether to report them for awareness only, not for choosing models, and at which threshold.
-- **Race grouping and "Managed Care, Unspecified":** needed for the fairness analysis, not for the baseline.
+This is for the final test-set stage. It affects reporting only, not training: race and payer stay in the model as features, with all their levels.
+
+- **Table:** AUC and Brier for all race and payer groups except blank payer, with stay counts and error bars. Small groups, such as Multi-racial and "Managed Care, Unspecified", appear only here.
+- **Calibration curves:** White, Black/African American and Other Race, plus Medicaid, commercial (Private + Blue Cross) and Medicare.
 
 ## Not included
 
