@@ -23,10 +23,12 @@
 # %%
 import re
 import urllib.request
+import warnings
 from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
 
 SEED = 42
 
@@ -531,3 +533,103 @@ assert levels["age_group"] == 5, levels["age_group"]
 assert levels["health_service_area"] == 8, levels["health_service_area"]
 assert levels["hospital_county"] == 57, levels["hospital_county"]
 assert levels.sum() == 838, levels.sum()
+
+# %% [markdown]
+# ## Step 5: Encode
+#
+# Every feature is a category with no natural order, even when its levels look like
+# numbers, so we one-hot encode all 17. Each level gets its own 0/1 column.
+#
+# ### Rare levels
+#
+# A level with very few stays would get a noisy coefficient. We group any level with
+# fewer than 100 training stays into "Other". No standard sets this number, so it's
+# our judgment. We chose it before seeing any model results, and it uses counts, not
+# outcomes.
+#
+# How many levels and stays does this affect in each feature?
+
+# %%
+MIN_STAYS = 100
+
+rare = pd.DataFrame(index=FEATURES, columns=["levels", "rare_levels", "rare_stays"])
+for column in FEATURES:
+    counts = train[column].value_counts()
+    is_rare = counts < MIN_STAYS
+    rare.loc[column] = [len(counts), is_rare.sum(), counts[is_rare].sum()]
+print(rare.to_string())
+print(f"Total rare levels: {rare['rare_levels'].sum()}")
+
+# %% [markdown]
+# Diagnosis and facility are affected most, with many levels but few stays. Where a
+# feature has one rare level, such as gender "U", that level is just relabeled.
+#
+# ### Fit the encoder
+#
+# This fits the encoder once on all of train, so we can check what it does. In Step
+# 6, it's refit inside each CV fold, so the validation fold can't affect the grouping.
+#
+# `drop="first"` leaves out one level from each feature as the reference. Which level
+# does it leave out, and how many columns do we end up with?
+
+# %%
+encoder = OneHotEncoder(
+    min_frequency=MIN_STAYS, handle_unknown="infrequent_if_exist", drop="first"
+)
+encoded = encoder.fit_transform(train[FEATURES])
+
+names = pd.Series(encoder.get_feature_names_out())
+summary = pd.DataFrame(
+    {
+        "reference": [
+            categories[index]
+            for categories, index in zip(encoder.categories_, encoder.drop_idx_)
+        ],
+        "columns": [names.str.startswith(f"{c}_").sum() for c in FEATURES],
+    },
+    index=FEATURES,
+)
+print(summary.to_string())
+print()
+print(f"Encoded training set: {encoded.shape[0]:,} rows, {encoded.shape[1]} columns")
+print(f"Share of values that aren't zero: {encoded.mean():.1%}")
+
+assert encoded.shape == (TRAIN_SIZE, 615), encoded.shape
+
+# %% [markdown]
+# The reference is the alphabetically first level that isn't rare. For example, MDC
+# code "00" is rare, so the reference is "01". We won't interpret these coefficients,
+# so which level is the reference doesn't matter here.
+#
+# The result is sparse: each row has at most 17 nonzero values, so it fits easily in
+# memory even with 615 columns.
+#
+# ### New levels
+#
+# A validation fold or later set can contain a level that the encoder never saw. What
+# happens to one?
+
+# %%
+new_facility = train[FEATURES].iloc[[0]].assign(permanent_facility_id="NEW")
+new_zip = train[FEATURES].iloc[[0]].assign(zip_code="NEW")
+
+
+def active_columns(row, feature):
+    """Names of a feature's columns that are 1 for this row."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        values = encoder.transform(row).toarray()[0]
+    return [n for n, v in zip(names, values) if v and n.startswith(f"{feature}_")]
+
+
+print("New facility:", active_columns(new_facility, "permanent_facility_id"))
+print("New ZIP:", active_columns(new_zip, "zip_code"))
+
+# %% [markdown]
+# A new facility goes to "Other", which scikit-learn labels `infrequent_sklearn`. A new
+# ZIP gets no column at all, because ZIP has no rare levels and so no "Other". All
+# zeros means the model treats that stay like the reference level.
+#
+# That second case affects only features with no rare levels, which have many stays at
+# every level, so a new level there is unlikely. We'll check for it when we use the
+# other sets.

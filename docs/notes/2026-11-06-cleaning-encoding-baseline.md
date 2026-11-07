@@ -71,7 +71,7 @@ MDC, medical/surgical and CCSR diagnosis are recorded at discharge. They stand i
 ## Step 5: Encode
 
 - One-hot encode all 17 features with scikit-learn's `OneHotEncoder`. Never use integer label-encoding.
-- Group any level with fewer than 100 training stays into "Other". New levels in validation folds, the recalibration set or the test set also go to "Other".
+- Group any level with fewer than 100 training stays into "Other" (scikit-learn names the column `<feature>_infrequent_sklearn`). New levels in validation folds, the recalibration set or the test set also go to "Other" if the feature has one. If it doesn't, they get all zeros, which the model treats as the reference level. We'll check for this when we use the recalibration and test sets.
 - **Baseline only:** use `drop="first"`, which drops the alphabetically first level that isn't rare as the reference. This and the cutoff are revisited for the penalized and tree models.
 - **Encoder settings:** `OneHotEncoder(min_frequency=100, handle_unknown="infrequent_if_exist", drop="first")`.
 - Keep all overlapping features, such as facility and county. Their coefficients won't be interpreted, because this overlap means they still aren't uniquely identified after dropping a level.
