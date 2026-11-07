@@ -22,12 +22,25 @@
 
 # %%
 import re
+import time
 import urllib.request
 import warnings
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.base import clone
+from sklearn.calibration import calibration_curve
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    brier_score_loss,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder
 
 SEED = 42
@@ -633,3 +646,195 @@ print("New ZIP:", active_columns(new_zip, "zip_code"))
 # That second case affects only features with no rare levels, which have many stays at
 # every level, so a new level there is unlikely. We'll check for it when we use the
 # other sets.
+
+# %% [markdown]
+# ## Step 6: Fit and evaluate the baseline
+#
+# The baseline is unpenalized logistic regression, so there are no hyperparameters to
+# tune. We use stratified 5-fold CV on the training set. The recalibration and test
+# sets aren't used here.
+#
+# ### Save slow results
+#
+# Slow results only need to run once. This helper loads saved files if they exist, and
+# otherwise computes the results and saves them. To recompute, delete the files. Do
+# that whenever something earlier in the notebook changes. Decisions are in
+# `docs/notes/2026-11-07-saving-results.md`.
+
+# %%
+RESULTS_DIR = Path("results")
+
+
+def load_or_compute(paths, compute):
+    """Load saved tables if they all exist. Otherwise compute and save them."""
+    if all(path.exists() for path in paths.values()):
+        print("Loaded saved results")
+        return {
+            name: pd.read_csv(path) if path.suffix == ".csv" else pd.read_parquet(path)
+            for name, path in paths.items()
+        }
+
+    results = compute()
+    for name, path in paths.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".csv":
+            results[name].to_csv(path, index=False)
+        else:
+            results[name].to_parquet(path)
+    print("Computed and saved results")
+    return results
+
+
+# %% [markdown]
+# ### Run cross-validation
+#
+# The pipeline refits the encoder inside each fold, so the validation fold can't affect
+# the grouping. `C=np.inf` turns the penalty off. New levels in a validation fold make
+# the encoder warn, as expected from Step 5, so we silence that one warning.
+
+
+# %%
+MAX_ITERATIONS = 5_000
+
+baseline = make_pipeline(
+    clone(encoder), LogisticRegression(C=np.inf, max_iter=MAX_ITERATIONS)
+)
+
+
+def run_baseline_cv():
+    X, y = train[FEATURES], train["y"]
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    predictions = pd.DataFrame(index=train.index, columns=["fold", "risk"], dtype=float)
+    scores = []
+
+    for fold, (fit_rows, validation_rows) in enumerate(folds.split(X, y), start=1):
+        model = clone(baseline)
+        start = time.perf_counter()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Found unknown categories")
+            model.fit(X.iloc[fit_rows], y.iloc[fit_rows])
+            risk = model.predict_proba(X.iloc[validation_rows])[:, 1]
+        seconds = time.perf_counter() - start
+
+        iterations = model[-1].n_iter_[0]
+        predictions.iloc[validation_rows] = np.column_stack(
+            [np.full(len(risk), fold), risk]
+        )
+        scores.append(
+            {
+                "fold": fold,
+                "auc": roc_auc_score(y.iloc[validation_rows], risk),
+                "brier": brier_score_loss(y.iloc[validation_rows], risk),
+                "columns": model[-1].coef_.shape[1],
+                "iterations": iterations,
+                "converged": iterations < MAX_ITERATIONS,
+                "seconds": seconds,
+            }
+        )
+
+    return {"scores": pd.DataFrame(scores), "predictions": predictions}
+
+
+baseline_cv = load_or_compute(
+    {
+        "scores": RESULTS_DIR / "baseline_logistic" / "cv_scores.csv",
+        "predictions": RESULTS_DIR / "baseline_logistic" / "oof_predictions.parquet",
+    },
+    run_baseline_cv,
+)
+scores = baseline_cv["scores"]
+predictions = baseline_cv["predictions"]
+
+assert (predictions.index == train.index).all(), "Saved results are out of date"
+assert predictions["risk"].notna().all()
+assert scores["converged"].all(), "A fold didn't converge"
+
+print(scores.round(4).to_string(index=False))
+
+# %% [markdown]
+# ### Results
+#
+# This table has one row per model. AUC and Brier are the mean and SD across the 5
+# validation folds. Precision and recall use all the out-of-fold predictions at the
+# default 0.5 threshold. They're for awareness only, and we don't use them to choose
+# models.
+
+
+# %%
+def results_row(model, scores, predictions):
+    """One row of the results table for a model's CV results."""
+    y = train.loc[predictions.index, "y"]
+    flagged = predictions["risk"] >= 0.5
+    return {
+        "model": model,
+        "auc": scores["auc"].mean(),
+        "auc_sd": scores["auc"].std(),
+        "brier": scores["brier"].mean(),
+        "brier_sd": scores["brier"].std(),
+        "precision": precision_score(y, flagged),
+        "recall": recall_score(y, flagged),
+    }
+
+
+results = pd.DataFrame([results_row("Baseline logistic", scores, predictions)])
+print(results.round(4).to_string(index=False))
+
+# %% [markdown]
+# AUC is within the published range of 0.75 to 0.81, and the folds barely differ. The
+# Brier score beats the roughly 0.177 from giving everyone the overall long-stay rate.
+# Diagnosis is recorded at discharge, which makes these scores somewhat better than a
+# true admission-day model would get.
+#
+# Recall is low because few patients clear the 0.5 threshold. These two numbers depend
+# on the threshold, so low recall here doesn't mean the model ranks patients poorly.
+#
+# ### Calibration
+#
+# Each stay has one out-of-fold prediction, from a model that didn't train on it. We sort
+# the stays into 10 equal-sized groups by predicted risk, then compare each group's
+# average predicted risk with the share who actually stayed long.
+
+# %%
+observed, predicted = calibration_curve(
+    train["y"], predictions["risk"], n_bins=10, strategy="quantile"
+)
+calibration = pd.DataFrame({"predicted": predicted, "observed": observed})
+calibration["gap"] = calibration["observed"] - calibration["predicted"]
+print(calibration.round(3).to_string(index=False))
+
+# %%
+fig, ax = plt.subplots(figsize=(6, 5))
+limit = max(predicted.max(), observed.max()) * 1.05
+ax.plot([0, limit], [0, limit], color="gray", linestyle="--", label="Perfect calibration")
+ax.plot(predicted, observed, marker="o", label="Baseline")
+ax.set_xlim(0, limit)
+ax.set_ylim(0, limit)
+ax.set_xlabel("Average predicted risk")
+ax.set_ylabel("Share who stayed more than 7 days")
+ax.set_title("Baseline calibration (out-of-fold, training set)")
+ax.legend()
+fig.tight_layout()
+fig.savefig(RESULTS_DIR / "baseline_logistic" / "calibration.png", dpi=150)
+
+# %% [markdown]
+# The curve sits on the diagonal, with every group within about 1 percentage point.
+# That's what we'd expect here: logistic regression tends to be well calibrated on data
+# like what it was fit on, and these folds come from the same sample. This doesn't test
+# calibration by group, which comes at the final stage.
+#
+# ### PRG026
+#
+# This diagnosis has no long stays in train, so its coefficient has no finite best value.
+# What risk do these stays get?
+
+# %%
+is_prg026 = train["ccsr_diagnosis_code"] == "PRG026"
+print(f"Stays: {is_prg026.sum():,}")
+print(f"Long stays: {train.loc[is_prg026, 'y'].sum()}")
+print(f"Average predicted risk: {predictions.loc[is_prg026, 'risk'].mean():.3%}")
+print(f"Highest predicted risk: {predictions.loc[is_prg026, 'risk'].max():.3%}")
+
+# %% [markdown]
+# These stays get a very low risk, which matches the data, and every fold converged, so
+# we keep this level as it is. Its coefficient doesn't mean anything, and the paper will
+# say so.

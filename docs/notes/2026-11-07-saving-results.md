@@ -11,6 +11,7 @@ results/
   baseline_logistic/
     cv_scores.csv
     oof_predictions.parquet
+    calibration.png
     model.joblib
 ```
 
@@ -18,6 +19,7 @@ results/
 | :--- | :--- | :--- |
 | `cv_scores.csv` | Scores for each fold | Yes |
 | `oof_predictions.parquet` | One out-of-fold probability per training stay, with its row ID | No |
+| `calibration.png` | The model's figures, redrawn on each run | Yes |
 | `model.joblib` | The model fitted on all of train | No |
 
 A small helper loads a saved result if the file exists. Otherwise, it computes the result and saves it. On another machine, the files not in git need a rerun.

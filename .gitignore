@@ -7,3 +7,5 @@ __pycache__/
 !.vscode/settings.json
 !.vscode/extensions.json
 data/
+results/**/*.parquet
+results/**/*.joblib
