@@ -17,7 +17,8 @@
 # # Baseline model
 #
 # Predicting whether an unplanned New York hospital admission lasts more than
-# 7 days. Decisions are in `docs/notes/2026-11-05-data-cohort-split.md`.
+# 7 days. Decisions are in `docs/notes/2026-11-05-data-cohort-split.md` and
+# `docs/notes/2026-11-06-cleaning-encoding-baseline.md`.
 
 # %%
 import re
@@ -376,3 +377,157 @@ for name, df in splits.items():
 for column in ["payment_typology_1", "race"]:
     print(test[column].value_counts(dropna=False).to_string())
     print()
+
+# %% [markdown]
+# ## Step 4: Clean
+#
+# Everything we look at in this step comes from the training set. The fixes go in
+# one function, so the recalibration and test sets can get the same fixes,
+# unchanged, when we use them.
+#
+# ### Labels that differ by year
+#
+# These are the 17 features the model will use. Which of their levels appear in
+# only one year?
+
+# %%
+FEATURES = [
+    "age_group",
+    "gender",
+    "race",
+    "ethnicity",
+    "zip_code",
+    "payment_typology_1",
+    "payment_typology_2",
+    "payment_typology_3",
+    "type_of_admission",
+    "emergency_department_indicator",
+    "permanent_facility_id",
+    "hospital_county",
+    "health_service_area",
+    "apr_mdc_code",
+    "apr_medical_surgical_description",
+    "ccsr_diagnosis_code",
+    "discharge_year",
+]
+
+for column in FEATURES:
+    if column == "discharge_year":
+        continue
+    in_2023 = set(train.loc[train["discharge_year"] == "2023", column].dropna())
+    in_2024 = set(train.loc[train["discharge_year"] == "2024", column].dropna())
+    if in_2023 != in_2024:
+        print(column)
+        print("  Only in 2023:", sorted(in_2023 - in_2024))
+        print("  Only in 2024:", sorted(in_2024 - in_2023))
+
+# %% [markdown]
+# Age, county and service area are the same levels spelled differently, so without
+# a fix each one would split in two and partly encode the year. We use one spelling
+# for each.
+#
+# Facility and diagnosis are codes rather than spellings, so we leave them alone.
+# Any that are rare get grouped in Step 5.
+
+# %%
+LABEL_FIXES = {
+    "age_group": {
+        "0 to 17": "0-17",
+        "18 to 29": "18-29",
+        "30 to 49": "30-49",
+        "50 to 69": "50-69",
+    },
+    "health_service_area": {"Capital/Adirond": "Capital/Adirondacks"},
+    "hospital_county": {"Manhattan": "New York", "St Lawrence": "Saint Lawrence"},
+}
+
+# %% [markdown]
+# ### Codes, not descriptions
+#
+# Three features have a code column and a description column. Does each code have
+# one description?
+
+# %%
+CODE_DESCRIPTIONS = {
+    "ccsr_diagnosis_code": "ccsr_diagnosis_description",
+    "apr_mdc_code": "apr_mdc_description",
+    "permanent_facility_id": "facility_name",
+}
+
+for code, description in CODE_DESCRIPTIONS.items():
+    within_year = train.groupby(["discharge_year", code])[description].nunique()
+    across_years = train.groupby(code)[description].unique()
+    shared = train.groupby(description)[code].nunique()
+    print(code)
+    print(f"  Codes: {train[code].nunique()}")
+    print(f"  Descriptions: {train[description].nunique()}")
+    print(f"  Most descriptions for a code within a year: {within_year.max()}")
+    print(
+        f"  Most descriptions for a code across years: {across_years.str.len().max()}"
+    )
+    print(f"  Descriptions used by more than one code: {(shared > 1).sum()}")
+    print(f"  Example: {list(across_years[across_years.str.len() > 1].iloc[0])}")
+
+# %% [markdown]
+# Within a year, each code has one description. Across years, most codes have two,
+# and the examples differ only in how they're written. One-hot encoding the
+# descriptions would split each level by year, so we encode the codes and use the
+# descriptions only to label results.
+#
+# A few facility names are used by more than one ID. We keep the IDs as they are,
+# because year-to-year facility changes are out of scope.
+#
+# ### Blanks
+#
+# Which features have blanks, and do those stays look different?
+
+# %%
+blank_counts = train[FEATURES].isna().sum()
+BLANK_COLUMNS = blank_counts[blank_counts > 0].index.tolist()
+
+blanks = pd.DataFrame(
+    {
+        "blank_stays": blank_counts[BLANK_COLUMNS],
+        "blank_share": train[BLANK_COLUMNS].isna().mean(),
+        "long_rate_if_blank": [
+            train.loc[train[c].isna(), "y"].mean() for c in BLANK_COLUMNS
+        ],
+        "long_rate_if_filled": [
+            train.loc[train[c].notna(), "y"].mean() for c in BLANK_COLUMNS
+        ],
+    }
+)
+print(blanks.round(3).to_string())
+
+# %% [markdown]
+# Only ZIP and the three payer columns have blanks, and the long-stay rate differs
+# between blank and filled rows, so a blank tells us something. We fill blanks with
+# "Unknown" so that each becomes its own level. A one-hot "Unknown" column already
+# marks these rows, so we don't add a separate missingness indicator.
+#
+# A blank payer 2 or 3 probably means there's no backup payer, not that a value is
+# missing. Payer 1 has so few blanks that its "Unknown" level will go into "Other"
+# in Step 5.
+#
+# ### Apply the fixes
+#
+# Stop with an error if the cleaned training set doesn't look as expected.
+
+
+# %%
+def clean(df):
+    """Apply the label fixes and fill blanks. Learns nothing from the data."""
+    return df.replace(LABEL_FIXES).fillna({c: "Unknown" for c in BLANK_COLUMNS})
+
+
+train = clean(train)
+
+levels = train[FEATURES].nunique()
+print(levels.to_string())
+print(f"Total: {levels.sum()}")
+
+assert train[FEATURES].notna().all().all()
+assert levels["age_group"] == 5, levels["age_group"]
+assert levels["health_service_area"] == 8, levels["health_service_area"]
+assert levels["hospital_county"] == 57, levels["hospital_county"]
+assert levels.sum() == 838, levels.sum()
