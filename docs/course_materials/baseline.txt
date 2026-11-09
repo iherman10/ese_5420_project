@@ -1,0 +1,33 @@
+# Predicting long unplanned hospital stays in New York, fairly across groups
+
+## Group
+1031977. Isaac (solo).
+
+## Changes since the proposal
+- Models use one random sample of 500,000 stays, the proposal's fallback, so slower models can run.
+- The 80% training portion is split into a 360,000-stay training set and a 40,000-stay recalibration set, so recalibration never sees the test set.
+- Brier score is added beside AUC and calibration curves.
+- Newborns admitted as emergency or urgent, facility-redacted records and the publisher's specialty (rehab and life-support) facilities are excluded.
+
+## Data
+SPARCS 2023 and 2024 pooled: 4,322,491 stays, 33 columns. Dropped: 1,111,319 elective, newborn or "Not Available" admissions; 10,250 newborns under other admission types; 8,606 facility-redacted stays; 176 stays at 10 specialty facilities. This leaves 3,192,140 unplanned stays (23.09% long), from which I sampled 500,000 (23.06% long). Inputs: 17 categorical features (age group, gender, race, ethnicity, 3-digit ZIP, three payer fields, admission type, ED indicator, facility, county, service area, APR MDC, medical/surgical, CCSR principal diagnosis, year). Output: length of stay over 7 days (1/0). Charges, costs, disposition, severity, mortality risk, DRG and procedure are excluded as leakage.
+
+## Split
+Stratified on the outcome, seed 42: train 360,000, recalibration 40,000, test 100,000. Tuning and the checkpoint score use stratified 5-fold CV on train only (seed 42), with encoding refit inside each fold through a scikit-learn Pipeline. Recalibration and test sets stay untouched; test is scored once, on the same rows for every model.
+
+## Baseline
+Unpenalized logistic regression on one-hot features (levels with under 100 training stays grouped into "Other", first level dropped). It has no hyperparameters, so there is no grid; 5-fold CV estimates its out-of-sample performance. The cutoff of 100 was fixed in advance, not tuned. The fit converged in every fold.
+
+## Result
+5-fold CV AUC 0.773 ± 0.0007, within the published admission-time range of 0.75-0.81. Brier score 0.1447 ± 0.0002, against 0.177 for predicting the base rate for everyone. Each error bar is a standard error: the SD of the 5 fold scores divided by sqrt(5). The out-of-fold calibration curve is within 0.006 of the diagonal in every decile.
+
+## Issues found
+- Several labels are spelled differently in 2023 and 2024 (age bands, a service area, two counties, code descriptions); I unified them and encoded codes, not descriptions.
+- Without grouping rare levels, every CV fold failed on levels its training fold hadn't seen.
+- MDC, medical/surgical and diagnosis are coded at discharge and stand in for the admission diagnosis, so the AUC is probably somewhat optimistic.
+
+## Next steps
+By 16 November (Isaac): lasso, ridge and elastic net logistic regression tuned by 5-fold CV, and gradient-boosted trees; a baseline rerun without the three diagnosis features; first Platt and isotonic recalibration; and a first paper draft.
+
+## Code
+https://github.com/iherman10/ese_5420_project (analysis/baseline_model.ipynb)
