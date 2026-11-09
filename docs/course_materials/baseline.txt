@@ -1,7 +1,7 @@
 # Predicting long unplanned hospital stays in New York, fairly across groups
 
 ## Group
-1031977. Isaac (solo).
+1031977. Isaac (solo). My proposal may have listed 1030482 by mistake; 1031977 is the number in my Canvas group's URL.
 
 ## Changes since the proposal
 - Models use one random sample of 500,000 stays, the proposal's fallback, so slower models can run.
