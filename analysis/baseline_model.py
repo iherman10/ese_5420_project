@@ -819,8 +819,87 @@ fig.savefig(RESULTS_DIR / "baseline_logistic" / "calibration.png", dpi=150)
 # %% [markdown]
 # The curve sits on the diagonal, with every group within about 1 percentage point.
 # That's what we'd expect here: logistic regression tends to be well calibrated on data
-# like what it was fit on, and these folds come from the same sample. This doesn't test
-# calibration by group, which comes at the final stage.
+# like what it was fit on, and these folds come from the same sample. The final check
+# by group uses the test set, but the same out-of-fold predictions give a first look.
+#
+# ### Calibration by payer and race
+#
+# Is the curve as close to the diagonal for each group? We use the groups from the
+# fairness plan. For main payer: Medicaid, commercial (private insurance and Blue
+# Cross/Blue Shield) and Medicare. For race: White, Black/African American and Other
+# Race. Multi-racial stays are too few for a curve, so they only appear in the final
+# table. Each group gets its own 10 equal-sized risk groups.
+
+# %%
+GROUPS = {
+    "payment_typology_1": {
+        "Medicaid": ["Medicaid"],
+        "Commercial": ["Private Health Insurance", "Blue Cross/Blue Shield"],
+        "Medicare": ["Medicare"],
+    },
+    "race": {
+        "White": ["White"],
+        "Black/African American": ["Black/African American"],
+        "Other Race": ["Other Race"],
+    },
+}
+
+group_curves = {}
+for column, groups in GROUPS.items():
+    for group, levels in groups.items():
+        in_group = train[column].isin(levels)
+        observed, predicted = calibration_curve(
+            train.loc[in_group, "y"],
+            predictions.loc[in_group, "risk"],
+            n_bins=10,
+            strategy="quantile",
+        )
+        group_curves[column, group] = {
+            "stays": in_group.sum(),
+            "predicted": predicted,
+            "observed": observed,
+        }
+        gaps = observed - predicted
+        print(
+            f"{group}: {in_group.sum():,} stays, "
+            f"{train.loc[in_group, 'y'].mean():.1%} long, "
+            f"largest gap {gaps[np.abs(gaps).argmax()]:+.3f}"
+        )
+
+# %%
+limit = max(
+    max(curve["predicted"].max(), curve["observed"].max())
+    for curve in group_curves.values()
+) * 1.05
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 8.6), sharex=True, sharey=True)
+for ax, ((column, group), curve) in zip(axes.flat, group_curves.items()):
+    ax.plot([0, limit], [0, limit], color="gray", linestyle="--", label="Perfect calibration")
+    ax.plot(curve["predicted"], curve["observed"], marker="o", label="Baseline")
+    ax.set_title(f"{group} ({curve['stays']:,} stays)")
+    ax.set_xlim(0, limit)
+    ax.set_ylim(0, limit)
+for ax in axes[-1]:
+    ax.set_xlabel("Average predicted risk")
+for ax, label in zip(axes[:, 0], ["Main payer", "Race"]):
+    ax.set_ylabel(f"{label}\nShare who stayed more than 7 days")
+axes[0, 0].legend(loc="upper left")
+fig.suptitle("Baseline calibration by main payer and race (out-of-fold, training set)")
+fig.tight_layout()
+fig.savefig(RESULTS_DIR / "baseline_logistic" / "calibration_by_group.png", dpi=150)
+
+# %% [markdown]
+# Every payer's curve stays within about 2 percentage points of the diagonal, and the
+# small gaps point in different directions. Medicare's lowest-risk stays run about 2
+# points longer than predicted and its highest-risk stays slightly shorter. The
+# highest-risk Medicaid and commercial stays run about 2 points longer than predicted.
+#
+# The race curves are even closer, all within about 1.5 points. White patients'
+# highest-risk stays run about 1 point shorter than predicted, and Black/African
+# American patients' run about 1.5 points longer.
+#
+# These are training-set folds without error bars, so this is only a first look. The
+# test set, with bootstrap bands, gives the real answer.
 #
 # ### PRG026
 #
