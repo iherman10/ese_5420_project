@@ -19,13 +19,13 @@
 # Predicting whether an unplanned New York hospital admission lasts more than
 # 7 days. Decisions are in `docs/notes/2026-11-05-data-cohort-split.md` and
 # `docs/notes/2026-11-06-cleaning-encoding-baseline.md`.
+#
+# The steps that every model shares live in `analysis/common.py`. This notebook walks
+# through them with a look at the data before each one, then fits the baseline.
 
 # %%
-import re
 import time
-import urllib.request
 import warnings
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,11 +39,9 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import OneHotEncoder
 
-SEED = 42
+from analysis import common
 
 # %% [markdown]
 # ## Step 1: Get the data
@@ -52,26 +50,9 @@ SEED = 42
 # stop with an error if either file isn't the expected size.
 
 # %%
-RAW_DIR = Path("data/raw")
-URL = "https://health.data.ny.gov/api/views/{id}/rows.csv?accessType=DOWNLOAD"
-DATASETS = {2023: "46xm-urtu", 2024: "sf4k-39ay"}
-EXPECTED_ROWS = {2023: 2_125_754, 2024: 2_196_737}
-EXPECTED_COLUMNS = 33
-
-raw = {}
-for year, dataset_id in DATASETS.items():
-    path = RAW_DIR / f"sparcs_{year}.csv"
-    if not path.exists():
-        print(f"Downloading {year}...")
-        RAW_DIR.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(URL.format(id=dataset_id), path)
-
-    raw[year] = pd.read_csv(path, dtype=str, engine="pyarrow")
-    assert raw[year].shape == (EXPECTED_ROWS[year], EXPECTED_COLUMNS), (
-        f"{path} has shape {raw[year].shape}. If the download was interrupted, "
-        "delete the file and run this again."
-    )
-    print(f"{year}: {raw[year].shape[0]:,} rows, {raw[year].shape[1]} columns")
+raw = common.load_raw()
+for year, df in raw.items():
+    print(f"{year}: {df.shape[0]:,} rows, {df.shape[1]} columns")
 
 # %% [markdown]
 # ## Step 2: Build the cohort and sample
@@ -85,11 +66,7 @@ for year, dataset_id in DATASETS.items():
 
 
 # %%
-def snake(name):
-    return re.sub(r"[^0-9a-z]+", "_", name.lower()).strip("_")
-
-
-columns = {year: {snake(c) for c in df.columns} for year, df in raw.items()}
+columns = {year: {common.snake(c) for c in df.columns} for year, df in raw.items()}
 print("Only in 2023:", sorted(columns[2023] - columns[2024]))
 print("Only in 2024:", sorted(columns[2024] - columns[2023]))
 print("Year column present:", "discharge_year" in columns[2023] & columns[2024])
@@ -100,16 +77,10 @@ print("Year column present:", "discharge_year" in columns[2023] & columns[2024])
 # don't need to add one.
 
 # %%
-RENAMES = {
-    "hospital_service_area": "health_service_area",
-    "zip_code_3_digits": "zip_code",
-}
+print(common.RENAMES)
 
-frames = [df.rename(columns=snake).rename(columns=RENAMES) for df in raw.values()]
-assert set(frames[0].columns) == set(frames[1].columns)
-
-cohort = pd.concat(frames, ignore_index=True)
-del raw, frames
+cohort = common.pool(raw)
+del raw
 print(f"{len(cohort):,} stays")
 
 # %% [markdown]
@@ -127,9 +98,7 @@ print(cohort.loc[~is_number, "length_of_stay"].value_counts().to_string())
 # length of stay is at least 8.
 
 # %%
-los_text = cohort["length_of_stay"].str.replace(" ", "").replace("120+", "120")
-cohort["los"] = pd.to_numeric(los_text)
-cohort["y"] = (cohort["los"] >= 8).astype(int)
+cohort = common.add_target(cohort)
 
 print(f"Length of stay ranges from {cohort['los'].min()} to {cohort['los'].max()}")
 print(f"Long stays: {cohort['y'].mean():.1%} of all stays")
@@ -156,9 +125,9 @@ print(long_stay_table(cohort, "type_of_admission").to_string())
 # differently, and "Not Available" doesn't tell us the type.
 
 # %%
-KEEP_ADMISSION_TYPES = ["Emergency", "Urgent", "Trauma"]
+print(common.KEEP_ADMISSION_TYPES)
 
-cohort = cohort[cohort["type_of_admission"].isin(KEEP_ADMISSION_TYPES)]
+cohort = common.keep_unplanned(cohort)
 print(f"{len(cohort):,} stays remain")
 
 # %% [markdown]
@@ -169,7 +138,7 @@ print(f"{len(cohort):,} stays remain")
 # group.
 
 # %%
-newborns = cohort[cohort["apr_mdc_code"] == "15"]
+newborns = cohort[cohort["apr_mdc_code"] == common.NEWBORN_MDC]
 print(f"{len(newborns):,} stays, {newborns['y'].mean():.1%} long")
 print()
 print(long_stay_table(newborns, "type_of_admission").to_string())
@@ -183,7 +152,7 @@ print(diagnoses.value_counts().head(5).to_string())
 # their stays work differently, so we drop this group too.
 
 # %%
-cohort = cohort[cohort["apr_mdc_code"] != "15"]
+cohort = common.drop_newborns(cohort)
 print(f"{len(cohort):,} stays remain")
 
 # %% [markdown]
@@ -224,7 +193,7 @@ print(cohort.loc[is_redacted, "apr_mdc_code"].value_counts().head(3).to_string()
 # so.
 
 # %%
-cohort = cohort[cohort["permanent_facility_id"].notna()]
+cohort = common.drop_redacted(cohort)
 print(f"{len(cohort):,} stays remain")
 
 # %% [markdown]
@@ -234,20 +203,7 @@ print(f"{len(cohort):,} stays remain")
 # discharges are mostly rehab or life support. How many of their stays are left?
 
 # %%
-SPECIALTY_FACILITIES = [
-    "000340",
-    "000775",
-    "000831",
-    "000968",
-    "001046",
-    "001138",
-    "001460",
-    "001486",
-    "009431",
-    "010223",
-]
-
-is_specialty = cohort["permanent_facility_id"].isin(SPECIALTY_FACILITIES)
+is_specialty = cohort["permanent_facility_id"].isin(common.SPECIALTY_FACILITIES)
 print(f"{is_specialty.sum():,} stays, {cohort.loc[is_specialty, 'y'].mean():.1%} long")
 print()
 print(long_stay_table(cohort[is_specialty], "permanent_facility_id").to_string())
@@ -257,7 +213,7 @@ print(long_stay_table(cohort[is_specialty], "permanent_facility_id").to_string()
 # so that the rule is simple: the publisher's list defines a specialty facility.
 
 # %%
-cohort = cohort[~is_specialty]
+cohort = common.drop_specialty(cohort)
 print(f"{len(cohort):,} stays remain")
 
 # %% [markdown]
@@ -308,16 +264,10 @@ print(highest.to_string())
 # Stop with an error if the cohort isn't the expected size.
 
 # %%
-EXPECTED_COHORT = {"2023": 1_562_648, "2024": 1_629_492}
-
-stays_by_year = cohort["discharge_year"].value_counts().to_dict()
-assert stays_by_year == EXPECTED_COHORT, stays_by_year
-assert len(cohort) == 3_192_140, len(cohort)
-assert cohort["los"].notna().all()
-assert round(cohort["y"].mean(), 4) == 0.2309, cohort["y"].mean()
+common.check_cohort(cohort)
 
 print(f"Cohort: {len(cohort):,} stays, {cohort['y'].mean():.2%} long")
-print(pd.Series(stays_by_year).to_string())
+print(cohort["discharge_year"].value_counts().to_string())
 
 # %% [markdown]
 # ### Draw the sample
@@ -326,9 +276,7 @@ print(pd.Series(stays_by_year).to_string())
 # sample of 500,000 stays from the roughly 3.2 million in the cohort.
 
 # %%
-SAMPLE_SIZE = 500_000
-
-sample = cohort.sample(n=SAMPLE_SIZE, random_state=SEED)
+sample = common.draw_sample(cohort)
 print(f"Sample: {len(sample):,} stays, {sample['y'].mean():.2%} long")
 
 # %% [markdown]
@@ -361,21 +309,8 @@ for column in ["discharge_year", "type_of_admission", "payment_typology_1", "rac
 # We take the test set off first, then take the recalibration set from what's left.
 
 # %%
-TRAIN_SIZE = 360_000
-RECAL_SIZE = 40_000
-TEST_SIZE = 100_000
-
-train_recal, test = train_test_split(
-    sample, test_size=TEST_SIZE, stratify=sample["y"], random_state=SEED
-)
-train, recal = train_test_split(
-    train_recal, test_size=RECAL_SIZE, stratify=train_recal["y"], random_state=SEED
-)
-del train_recal
-
+train, recal, test = common.split(sample)
 splits = {"train": train, "recalibration": recal, "test": test}
-assert [len(df) for df in splits.values()] == [TRAIN_SIZE, RECAL_SIZE, TEST_SIZE]
-assert train.index.union(recal.index).union(test.index).size == SAMPLE_SIZE
 
 # %% [markdown]
 # Is the long-stay rate the same in each set?
@@ -397,8 +332,8 @@ for column in ["payment_typology_1", "race"]:
 # ## Step 4: Clean
 #
 # Everything we look at in this step comes from the training set. The fixes go in
-# one function, so the recalibration and test sets can get the same fixes,
-# unchanged, when we use them.
+# one function, `common.clean`, so the recalibration and test sets can get the same
+# fixes, unchanged, when we use them.
 #
 # ### Labels that differ by year
 #
@@ -406,25 +341,7 @@ for column in ["payment_typology_1", "race"]:
 # only one year?
 
 # %%
-FEATURES = [
-    "age_group",
-    "gender",
-    "race",
-    "ethnicity",
-    "zip_code",
-    "payment_typology_1",
-    "payment_typology_2",
-    "payment_typology_3",
-    "type_of_admission",
-    "emergency_department_indicator",
-    "permanent_facility_id",
-    "hospital_county",
-    "health_service_area",
-    "apr_mdc_code",
-    "apr_medical_surgical_description",
-    "ccsr_diagnosis_code",
-    "discharge_year",
-]
+FEATURES = common.FEATURES
 
 for column in FEATURES:
     if column == "discharge_year":
@@ -445,16 +362,8 @@ for column in FEATURES:
 # Any that are rare get grouped in Step 5.
 
 # %%
-LABEL_FIXES = {
-    "age_group": {
-        "0 to 17": "0-17",
-        "18 to 29": "18-29",
-        "30 to 49": "30-49",
-        "50 to 69": "50-69",
-    },
-    "health_service_area": {"Capital/Adirond": "Capital/Adirondacks"},
-    "hospital_county": {"Manhattan": "New York", "St Lawrence": "Saint Lawrence"},
-}
+for column, fixes in common.LABEL_FIXES.items():
+    print(column, fixes)
 
 # %% [markdown]
 # ### Codes, not descriptions
@@ -499,6 +408,7 @@ for code, description in CODE_DESCRIPTIONS.items():
 # %%
 blank_counts = train[FEATURES].isna().sum()
 BLANK_COLUMNS = blank_counts[blank_counts > 0].index.tolist()
+assert BLANK_COLUMNS == common.BLANK_COLUMNS, BLANK_COLUMNS
 
 blanks = pd.DataFrame(
     {
@@ -530,12 +440,7 @@ print(blanks.round(3).to_string())
 
 
 # %%
-def clean(df):
-    """Apply the label fixes and fill blanks. Learns nothing from the data."""
-    return df.replace(LABEL_FIXES).fillna({c: "Unknown" for c in BLANK_COLUMNS})
-
-
-train = clean(train)
+train = common.clean(train)
 
 levels = train[FEATURES].nunique()
 print(levels.to_string())
@@ -563,9 +468,9 @@ assert levels.sum() == 838, levels.sum()
 # How many levels and stays does this affect in each feature?
 
 # %%
-MIN_STAYS = 100
+MIN_STAYS = common.MIN_STAYS
 
-rare = pd.DataFrame(index=FEATURES, columns=["levels", "rare_levels", "rare_stays"])
+rare =pd.DataFrame(index=FEATURES, columns=["levels", "rare_levels", "rare_stays"])
 for column in FEATURES:
     counts = train[column].value_counts()
     is_rare = counts < MIN_STAYS
@@ -586,9 +491,7 @@ print(f"Total rare levels: {rare['rare_levels'].sum()}")
 # does it leave out, and how many columns do we end up with?
 
 # %%
-encoder = OneHotEncoder(
-    min_frequency=MIN_STAYS, handle_unknown="infrequent_if_exist", drop="first"
-)
+encoder = common.make_encoder(drop="first")
 encoded = encoder.fit_transform(train[FEATURES])
 
 names = pd.Series(encoder.get_feature_names_out())
@@ -607,7 +510,7 @@ print()
 print(f"Encoded training set: {encoded.shape[0]:,} rows, {encoded.shape[1]} columns")
 print(f"Share of values that aren't zero: {encoded.mean():.1%}")
 
-assert encoded.shape == (TRAIN_SIZE, 615), encoded.shape
+assert encoded.shape == (common.TRAIN_SIZE, 615), encoded.shape
 
 # %% [markdown]
 # The reference is the alphabetically first level that isn't rare. For example, MDC
@@ -656,34 +559,13 @@ print("New ZIP:", active_columns(new_zip, "zip_code"))
 #
 # ### Save slow results
 #
-# Slow results only need to run once. This helper loads saved files if they exist, and
-# otherwise computes the results and saves them. To recompute, delete the files. Do
-# that whenever something earlier in the notebook changes. Decisions are in
-# `docs/notes/2026-11-07-saving-results.md`.
+# Slow results only need to run once. `common.load_or_compute` loads saved files if
+# they exist, and otherwise computes the results and saves them. To recompute, delete
+# the files. Do that whenever something earlier in the notebook changes. Decisions are
+# in `docs/notes/2026-11-07-saving-results.md`.
 
 # %%
-RESULTS_DIR = Path("results")
-
-
-def load_or_compute(paths, compute):
-    """Load saved tables if they all exist. Otherwise compute and save them."""
-    if all(path.exists() for path in paths.values()):
-        print("Loaded saved results")
-        return {
-            name: pd.read_csv(path) if path.suffix == ".csv" else pd.read_parquet(path)
-            for name, path in paths.items()
-        }
-
-    results = compute()
-    for name, path in paths.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.suffix == ".csv":
-            results[name].to_csv(path, index=False)
-        else:
-            results[name].to_parquet(path)
-    print("Computed and saved results")
-    return results
-
+RESULTS_DIR = common.RESULTS_DIR
 
 # %% [markdown]
 # ### Run cross-validation
@@ -703,7 +585,7 @@ baseline = make_pipeline(
 
 def run_baseline_cv():
     X, y = train[FEATURES], train["y"]
-    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    folds = common.FOLDS
     predictions = pd.DataFrame(index=train.index, columns=["fold", "risk"], dtype=float)
     scores = []
 
@@ -735,7 +617,7 @@ def run_baseline_cv():
     return {"scores": pd.DataFrame(scores), "predictions": predictions}
 
 
-baseline_cv = load_or_compute(
+baseline_cv = common.load_or_compute(
     {
         "scores": RESULTS_DIR / "baseline_logistic" / "cv_scores.csv",
         "predictions": RESULTS_DIR / "baseline_logistic" / "oof_predictions.parquet",
@@ -745,8 +627,7 @@ baseline_cv = load_or_compute(
 scores = baseline_cv["scores"]
 predictions = baseline_cv["predictions"]
 
-assert (predictions.index == train.index).all(), "Saved results are out of date"
-assert predictions["risk"].notna().all()
+common.check_rows(predictions, train)
 assert scores["converged"].all(), "A fold didn't converge"
 
 print(scores.round(4).to_string(index=False))

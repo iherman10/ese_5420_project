@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ESE 5420 (Statistics for Data Science, Fall 2026) solo final project: predicting whether an unplanned New York hospital admission lasts more than 7 days (NYSDOH SPARCS inpatient discharges, 2023–24 pooled), comparing course models on AUC and calibration, with a fairness check by payer and race. Deliverable is a ≤6-page NeurIPS-format paper plus a 5-minute video.
 
-Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw CSVs into `data/raw/` (gitignored) and checks the proposal's data claims.
+Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw CSVs into `data/raw/` (gitignored) and checks the proposal's data claims. `analysis/common.py` holds the steps every model shares (data, cohort, split, cleaning, encoder, CV folds, saved results); model notebooks import it with `from analysis import common` and must run from the repo root.
 
 ## Docs
 
@@ -57,7 +57,7 @@ Notebooks are paired with percent-format `.py` files of the same name through `[
 ```bash
 uv run jupytext --sync analysis/<name>.py                 # sync .py -> .ipynb (pass the .ipynb to sync the other way)
 uv run jupytext --to ipynb --set-kernel python3 --execute --run-path . analysis/<name>.py   # rebuild and execute end to end
-uv run python analysis/<name>.py                          # quick run without Jupyter
+uv run python -m analysis.<name>                          # quick run without Jupyter
 ```
 
 In the execute command, `--set-kernel python3` uses the kernel inside `.venv`, so nothing needs registering per machine, and `--run-path .` runs from the repo root, matching VS Code.
