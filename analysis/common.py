@@ -247,3 +247,19 @@ def check_rows(predictions, df):
     """Stop with an error if saved predictions don't match the current rows."""
     assert predictions.index.equals(df.index), "Saved results are out of date"
     assert predictions["risk"].notna().all()
+
+
+# Fairness groups
+
+GROUPS = {
+    "payment_typology_1": {
+        "Medicaid": ["Medicaid"],
+        "Commercial": ["Private Health Insurance", "Blue Cross/Blue Shield"],
+        "Medicare": ["Medicare"],
+    },
+    "race": {
+        "White": ["White"],
+        "Black/African American": ["Black/African American"],
+        "Other Race": ["Other Race"],
+    },
+}
