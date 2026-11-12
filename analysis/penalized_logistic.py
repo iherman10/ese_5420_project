@@ -190,6 +190,7 @@ summary = (
         brier=("brier", "mean"),
         brier_sd=("brier", "std"),
         nonzero=("nonzero", "mean"),
+        columns=("columns", "mean"),
         converged=("converged", "all"),
         seconds=("seconds", "mean"),
     )
@@ -245,6 +246,7 @@ fig.savefig(RESULTS_DIR / "tuning.png", dpi=150)
 best = summary.loc[summary.groupby("l1_ratio")["auc"].idxmax()].copy()
 best["at_edge"] = best["C"].isin([CS.min(), CS.max()])
 best["auc_vs_baseline"] = best["auc"] - baseline_auc
+best["nonzero_share"] = best["nonzero"] / best["columns"]
 print(
     best[
         [
@@ -255,7 +257,41 @@ print(
             "auc_vs_baseline",
             "brier",
             "nonzero",
+            "columns",
+            "nonzero_share",
             "at_edge",
         ]
     ].to_string(index=False, float_format="{:.4g}".format)
 )
+
+# %% [markdown]
+# ## Findings
+#
+# Takeaways so far, from the tuning results above. They'll be updated as diagnostics are
+# added.
+#
+# - **A penalty doesn't help.** All three penalties do best at `C = 1`, the weakest
+#   penalty in the grid. There they tie the baseline: CV AUC 0.7737, 0.0002 above the
+#   baseline, well within one fold SD (about 0.0017), and Brier 0.1446. Every stronger
+#   penalty makes both scores worse.
+# - **Why: low variance, so the error is bias.** With about 288,000 rows per fold and
+#   about 610 columns, the unpenalized coefficients are already precise. A penalty can
+#   only add bias. The remaining error is what a linear model of these dummies can't
+#   express, such as interactions, plus noise no model can remove. The tree models and
+#   the MLP will show how much of it is bias.
+# - **Best `C` at the edge of the grid.** The best `C` is at the top end, but the curves
+#   are flat from `C = 0.1` up, and larger `C` just approaches the baseline. Extending
+#   the grid upward wouldn't change anything.
+# - **Strong L1 penalties zero every coefficient.** Lasso at `C` ≤ 1e-4 and elastic net
+#   at `C` ≤ 3e-5 predict the base rate for every stay: AUC 0.5 and Brier about 0.178.
+#   Ridge never zeros a coefficient, so it still ranks stays at AUC 0.68 even at
+#   `C = 1e-5`.
+# - **Sparsity costs nothing at `C = 1`.** Lasso keeps 91% of the columns and elastic
+#   net 93%, with the same AUC as ridge.
+# - **Convergence.** 4 of 165 fits hit `max_iter`: elastic net at `C` ≈ 0.32, folds 2–5.
+#   Their scores match the converged neighbors, so they're fine for AUC and Brier.
+#   Their `nonzero` counts may be slightly high, since saga zeros coefficients
+#   gradually.
+# - **Interactions are deferred.** The tree models learn interactions from the same
+#   features. If XGBoost clearly beats logistic regression, try a logistic regression
+#   with a few interactions as an optional extra.
