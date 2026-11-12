@@ -308,7 +308,16 @@ def encode_folds(X, y, make_encoder=make_encoder):
     return folds
 
 
-THRESHOLD = 0.5
+# The training set's long-stay rate (83,026 of 360,000 stays). Flagging at it marks any
+# stay the model rates as riskier than average. See
+# docs/notes/2026-11-12-base-rate-threshold.md.
+THRESHOLD = 0.2306
+
+
+def check_threshold(train):
+    """Stop with an error if `THRESHOLD` isn't the training set's long-stay rate."""
+    rate = train["y"].mean()
+    assert abs(rate - THRESHOLD) < 5e-5, f"THRESHOLD {THRESHOLD} != base rate {rate:.4f}"
 
 
 def fold_scores(fold, y_true, risk, seconds, **details):

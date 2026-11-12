@@ -303,10 +303,12 @@ common.show_scores(with_penalty(cv_scores))
 # #### Results
 #
 # The same results table as the baseline's. Each score is the mean and SD across the 5
-# validation folds. Precision and recall use the default 0.5 threshold. They're for
-# awareness only, and we don't use them to choose models.
+# validation folds. Precision and recall use the same base-rate threshold as the
+# baseline (`common.THRESHOLD`). They're for awareness only, and we don't use them to
+# choose models.
 
 # %%
+common.check_threshold(train)
 results = common.cv_results("Lasso logistic", cv_scores)
 common.show_scores(results)
 

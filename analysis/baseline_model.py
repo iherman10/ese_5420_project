@@ -630,11 +630,14 @@ common.show_scores(scores)
 # ### Results
 #
 # This table has one row per model. Each score is the mean and SD across the 5
-# validation folds. Precision and recall use the default 0.5 threshold. They're for
-# awareness only, and we don't use them to choose models.
+# validation folds. Precision and recall flag stays whose risk is at or above the
+# training set's long-stay rate (`common.THRESHOLD`, 0.2306), i.e. any stay the model
+# rates as riskier than average. They're for awareness only, and we don't use them to
+# choose models.
 
 
 # %%
+common.check_threshold(train)
 results = common.cv_results("Baseline logistic", scores)
 common.show_scores(results)
 
@@ -644,8 +647,9 @@ common.show_scores(results)
 # Diagnosis is recorded at discharge, so these scores may be somewhat better than a true
 # admission-day model would get.
 #
-# Recall is low because few patients clear the 0.5 threshold. These two numbers depend
-# on the threshold, so low recall here doesn't mean the model ranks patients poorly.
+# Precision and recall trade off as the threshold moves. A threshold of 0.5 would flag
+# only about 9% of stays and catch about a quarter of long stays; the base rate flags
+# about 40% and catches about 70%. AUC and Brier don't depend on the threshold.
 #
 # ### Calibration
 #
