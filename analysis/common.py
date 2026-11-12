@@ -1,8 +1,10 @@
 """Shared data, cohort, split, cleaning and encoding steps for every model notebook.
 
 Decisions are in `docs/notes/2026-11-05-data-cohort-split.md`,
-`docs/notes/2026-11-06-cleaning-encoding-baseline.md` and
-`docs/notes/2026-11-10-model-comparison-plan.md`. `analysis/baseline_model.py` walks
+`docs/notes/2026-11-06-cleaning-encoding-baseline.md`,
+`docs/notes/2026-11-07-saving-results.md`,
+`docs/notes/2026-11-10-model-comparison-plan.md` and
+`docs/notes/2026-11-12-recalibration-and-comparison.md`. `analysis/baseline_model.py` walks
 through each step with a look at the data first.
 
 Run notebooks from the repo root, so the relative paths below resolve, and import this
@@ -11,9 +13,14 @@ module with `from analysis import common`.
 
 import re
 import urllib.request
+import warnings
 from pathlib import Path
 
+import joblib
+import numpy as np
 import pandas as pd
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import OneHotEncoder
 
@@ -224,29 +231,138 @@ FOLDS = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
 
 def load_or_compute(paths, compute):
-    """Load saved tables if they all exist. Otherwise compute and save them."""
+    """Load saved results if they all exist. Otherwise compute and save them.
+
+    `.csv` files are saved without the index, `.parquet` files with it (the row IDs),
+    and `.joblib` files hold any Python object, such as a fitted model.
+    """
     if all(path.exists() for path in paths.values()):
         print("Loaded saved results")
-        return {
-            name: pd.read_csv(path) if path.suffix == ".csv" else pd.read_parquet(path)
-            for name, path in paths.items()
-        }
+        return {name: _load(path) for name, path in paths.items()}
 
     results = compute()
     for name, path in paths.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.suffix == ".csv":
-            results[name].to_csv(path, index=False)
-        else:
-            results[name].to_parquet(path)
+        _save(results[name], path)
     print("Computed and saved results")
     return results
+
+
+def _load(path):
+    if path.suffix == ".csv":
+        return pd.read_csv(path)
+    if path.suffix == ".parquet":
+        return pd.read_parquet(path)
+    if path.suffix == ".joblib":
+        return joblib.load(path)
+    raise ValueError(f"Unknown file type: {path}")
+
+
+def _save(result, path):
+    if path.suffix == ".csv":
+        result.to_csv(path, index=False)
+    elif path.suffix == ".parquet":
+        result.to_parquet(path)
+    elif path.suffix == ".joblib":
+        joblib.dump(result, path)
+    else:
+        raise ValueError(f"Unknown file type: {path}")
 
 
 def check_rows(predictions, df):
     """Stop with an error if saved predictions don't match the current rows."""
     assert predictions.index.equals(df.index), "Saved results are out of date"
     assert predictions["risk"].notna().all()
+
+
+# Model notebooks
+
+UNKNOWN_LEVELS = "Found unknown categories"
+
+
+def encode_folds(X, y, make_encoder=make_encoder):
+    """Encode each CV fold once, fitting the encoder on the fold's training part only.
+
+    New levels in a validation fold make the encoder warn, as expected, so that one
+    warning is silenced.
+    """
+    folds = []
+    for fold, (fit_rows, validation_rows) in enumerate(FOLDS.split(X, y), start=1):
+        encoder = make_encoder()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=UNKNOWN_LEVELS)
+            X_fit = encoder.fit_transform(X.iloc[fit_rows])
+            X_validation = encoder.transform(X.iloc[validation_rows])
+        folds.append(
+            {
+                "fold": fold,
+                "validation_rows": validation_rows,
+                "X_fit": X_fit,
+                "y_fit": y.iloc[fit_rows].to_numpy(),
+                "X_validation": X_validation,
+                "y_validation": y.iloc[validation_rows].to_numpy(),
+            }
+        )
+    return folds
+
+
+def oof_frame(index, folds, risks):
+    """One out-of-fold risk per training stay, with its fold, indexed by row ID."""
+    predictions = pd.DataFrame(index=index, columns=["fold", "risk"], dtype=float)
+    for fold, risk in zip(folds, risks):
+        predictions.iloc[fold["validation_rows"]] = np.column_stack(
+            [np.full(len(risk), fold["fold"]), risk]
+        )
+    return predictions
+
+
+def predict_risk(model, df):
+    """A fitted pipeline's risk for each stay in `df`, indexed by row ID."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=UNKNOWN_LEVELS)
+        risk = model.predict_proba(df[FEATURES])[:, 1]
+    return pd.DataFrame({"risk": risk}, index=df.index)
+
+
+def unseen_levels(encoder, df):
+    """Rows of `df` with a level the encoder never saw, for each feature that has no
+    infrequent column. Those rows get all zeros for that feature."""
+    counts = {}
+    for feature, levels, infrequent in zip(
+        encoder.feature_names_in_, encoder.categories_, encoder.infrequent_categories_
+    ):
+        if infrequent is None:
+            counts[feature] = int((~df[feature].isin(levels)).sum())
+    return pd.Series(counts, name="unseen_rows")
+
+
+# Recalibration
+
+CLIP = 1e-6
+
+
+def _log_odds(risk):
+    p = np.clip(np.asarray(risk, dtype=float), CLIP, 1 - CLIP)
+    return np.log(p / (1 - p)).reshape(-1, 1)
+
+
+def fit_recalibrators(risk, y):
+    """Fit Platt scaling and isotonic regression on a model's recalibration-set risks.
+
+    Platt is an unpenalized logistic regression on the log-odds of the risk. Isotonic
+    gives risks outside the fitted range the nearest fitted value.
+    """
+    platt = LogisticRegression(C=np.inf).fit(_log_odds(risk), y)
+    isotonic = IsotonicRegression(out_of_bounds="clip").fit(np.asarray(risk), y)
+    return {"platt": platt, "isotonic": isotonic}
+
+
+def recalibrate(recalibrators, risk):
+    """Apply both recalibrators to raw risks. Returns {"platt": ..., "isotonic": ...}."""
+    return {
+        "platt": recalibrators["platt"].predict_proba(_log_odds(risk))[:, 1],
+        "isotonic": recalibrators["isotonic"].predict(np.asarray(risk)),
+    }
 
 
 # Fairness groups

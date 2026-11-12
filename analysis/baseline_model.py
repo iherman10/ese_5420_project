@@ -17,8 +17,10 @@
 # # Baseline model
 #
 # Predicting whether an unplanned New York hospital admission lasts more than
-# 7 days. Decisions are in `docs/notes/2026-11-05-data-cohort-split.md` and
-# `docs/notes/2026-11-06-cleaning-encoding-baseline.md`.
+# 7 days. Decisions are in `docs/notes/2026-11-05-data-cohort-split.md`,
+# `docs/notes/2026-11-06-cleaning-encoding-baseline.md`,
+# `docs/notes/2026-11-07-saving-results.md` and
+# `docs/notes/2026-11-12-recalibration-and-comparison.md`.
 #
 # The steps that every model shares live in `analysis/common.py`. This notebook walks
 # through them with a look at the data before each one, then fits the baseline.
@@ -28,6 +30,7 @@ import time
 import warnings
 
 import matplotlib.pyplot as plt
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -554,8 +557,8 @@ print("New ZIP:", active_columns(new_zip, "zip_code"))
 # ## Step 6: Fit and evaluate the baseline
 #
 # The baseline is unpenalized logistic regression, so there are no hyperparameters to
-# tune. We use stratified 5-fold CV on the training set. The recalibration and test
-# sets aren't used here.
+# tune. We use stratified 5-fold CV on the training set. The recalibration set is only
+# used in Step 7, and the test set isn't used yet.
 #
 # ### Save slow results
 #
@@ -663,8 +666,8 @@ print(results.round(4).to_string(index=False))
 # %% [markdown]
 # AUC is within the published range of 0.75 to 0.81, and the folds barely differ. The
 # Brier score beats the roughly 0.177 from giving everyone the overall long-stay rate.
-# Diagnosis is recorded at discharge, which makes these scores somewhat better than a
-# true admission-day model would get.
+# Diagnosis is recorded at discharge, so these scores may be somewhat better than a true
+# admission-day model would get.
 #
 # Recall is low because few patients clear the 0.5 threshold. These two numbers depend
 # on the threshold, so low recall here doesn't mean the model ranks patients poorly.
@@ -719,3 +722,51 @@ print(f"Highest predicted risk: {predictions.loc[is_prg026, 'risk'].max():.3%}")
 # These stays get a very low risk, which matches the data, and every fold converged, so
 # we keep this level as it is. Its coefficient doesn't mean anything, and the paper will
 # say so.
+
+# %% [markdown]
+# ## Step 7: Final model and recalibration
+#
+# Decisions are in `docs/notes/2026-11-12-recalibration-and-comparison.md`. The
+# baseline is refit on all of train, then predicts the recalibration set. Platt
+# scaling and isotonic regression are fit on those risks with
+# `common.fit_recalibrators`. Both are judged only on the test set, in the comparison
+# notebook.
+#
+# The recalibration set gets the same cleaning as train. To refit the model, delete
+# `model.joblib`. The predictions and recalibrators take seconds, so they rerun every
+# time and overwrite the saved files.
+
+# %%
+recal = common.clean(recal)
+OUT_DIR = RESULTS_DIR / "baseline_logistic"
+
+
+def fit_final_model():
+    model = clone(baseline)
+    model.fit(train[FEATURES], train["y"])
+    return {"model": model}
+
+
+final_model = common.load_or_compute(
+    {"model": OUT_DIR / "model.joblib"}, fit_final_model
+)["model"]
+assert final_model[-1].n_iter_[0] < MAX_ITERATIONS, "The final model didn't converge"
+
+# %% [markdown]
+# Recalibration-set stays with a level the encoder never saw, in a feature with no
+# infrequent column, get all zeros for that feature, as in Step 5. How many are there?
+
+# %%
+print(common.unseen_levels(final_model[0], recal).to_string())
+
+# %%
+recal_predictions = common.predict_risk(final_model, recal)
+common.check_rows(recal_predictions, recal)
+recal_predictions.to_parquet(OUT_DIR / "recal_predictions.parquet")
+
+recalibrators = common.fit_recalibrators(recal_predictions["risk"], recal["y"])
+joblib.dump(recalibrators, OUT_DIR / "recalibrators.joblib")
+print(
+    f"Platt: slope {recalibrators['platt'].coef_[0, 0]:.3f}, "
+    f"intercept {recalibrators['platt'].intercept_[0]:.3f}"
+)

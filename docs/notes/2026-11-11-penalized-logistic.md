@@ -53,3 +53,18 @@ That is 33 settings × 5 folds = 165 fits.
 - Is this grid size the search budget the later models must match?
 - Add `l1_ratio` 0.25 and 0.75 (55 settings) if 0.5 comes out clearly best?
 - Fairness groups, for later: where "Managed Care, Unspecified" goes among the payer groups, and how Multi-racial stays are handled.
+
+## Update 2026-11-12: results and decisions
+
+Added after the 165 tuning fits ran. This section answers the open questions above, and where it disagrees with an earlier section, it replaces it.
+
+- **Chosen model:** lasso (`l1_ratio = 1`) at `C = 1`. It has the best mean CV AUC (0.77367) and the lowest mean CV Brier (0.14459), and it drops about 9% of the encoded columns. Ridge and elastic net trail it by only 0.00001–0.00002, so the three are practically tied. Only lasso is reported, with results in one folder, `results/penalized_logistic/`.
+- **How `C` is chosen:** the best mean CV AUC. No one-standard-error rule.
+- **Against the baseline:** better on every fold, by 0.00015–0.00028 AUC and with a lower Brier, but too small to matter (CV AUC 0.7737 vs 0.7734). With about 288,000 rows per fold and about 610 columns, the coefficients are already precise, so a penalty has little variance to remove.
+- **Grid edge:** the best `C` for all three penalties is 1, the top of the grid. The grid isn't extended, which replaces the edge check above. The curves are flat from `C = 0.1` up, and larger `C` only approaches the baseline.
+- **No extra `l1_ratio` values:** 0.5 wasn't clearly best, so 0.25 and 0.75 aren't added.
+- **Convergence:** 4 of 165 fits hit `max_iter = 1000`, all elastic net at `C` ≈ 0.32, folds 2–5. Their scores are in line with the converged fits around them, so `max_iter` isn't raised. Their nonzero counts may be slightly high.
+- **How the tuning runs:** not `GridSearchCV`. Each fold is encoded once, with the encoder fit on the fold's training part only, and the 165 fits run in parallel with joblib. This fits the same models, and it's faster.
+- **Search budget for later models:** in the same ballpark as this one (tens of settings × 5 folds), not exactly 33 settings.
+- **Interactions:** not added now. The tree models learn them from the same features. If XGBoost clearly beats logistic regression, a logistic regression with a few chosen interactions is an optional extra.
+- **Outputs:** `cv_scores.csv` and `oof_predictions.parquet` from re-running the 5 folds for the chosen setting, `model.joblib` refit on all of train, and `recal_predictions.parquet`. `test_predictions.parquet` waits until the end of the project.
