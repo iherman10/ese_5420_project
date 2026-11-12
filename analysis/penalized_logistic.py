@@ -34,7 +34,6 @@ import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import brier_score_loss, roc_auc_score
 from sklearn.pipeline import make_pipeline
 
 from analysis import common
@@ -42,10 +41,10 @@ from analysis import common
 RESULTS_DIR = common.RESULTS_DIR / "penalized_logistic"
 
 # %% [markdown]
-# ## Step 1: Setup
+# ## Setup
 #
 # The same training set, features and folds as the baseline. The recalibration set is
-# only used in Step 5, where the final model predicts on it. The test set isn't used
+# only used in Recalibration, where the final model predicts on it. The test set isn't used
 # yet.
 
 # %%
@@ -55,7 +54,9 @@ print(f"{len(train):,} training stays, {y.mean():.1%} stayed more than 7 days")
 print(f"{len(common.FEATURES)} features")
 
 # %% [markdown]
-# ## Step 2: The model
+# ## Tuning
+#
+# ### The model
 #
 # Elastic net logistic regression adds a penalty on the size of the coefficients to the
 # usual fit. The penalty is a mix of two kinds, set by `l1_ratio`:
@@ -98,15 +99,19 @@ def make_model(l1_ratio, C):
 
 
 # %% [markdown]
-# ## Step 3: Tune
+# ### Fits
 #
 # `common.encode_folds` fits the encoder on each fold's training part only. The encoder
 # doesn't depend on `C` or `l1_ratio`, so each fold is encoded once and reused for all
 # 33 settings.
 #
 # The 165 fits run in parallel. For each one we save the validation AUC and Brier, the
-# number of iterations, whether it converged, how many coefficients are nonzero and the
-# fit time. To recompute, delete `results/penalized_logistic/tuning.csv`.
+# share of coefficients that are nonzero, the number of iterations, whether it converged
+# and the fit time. To recompute, delete `results/penalized_logistic/tuning.csv`.
+#
+# The saved grid was fit before precision and recall were added to the fold scores, so
+# the tuning tables show AUC and Brier only. Refitting the grid, about 300 CPU-minutes,
+# would add them. The chosen setting's tables below have all four.
 
 
 # %%
@@ -119,20 +124,25 @@ def fit_one(fold, l1_ratio, C, return_risk=False):
         model.fit(fold["X_fit"], fold["y_fit"])
     seconds = time.perf_counter() - start
     risk = model.predict_proba(fold["X_validation"])[:, 1]
-    iterations = model.n_iter_[0]
     scores = {
         "l1_ratio": l1_ratio,
         "C": C,
-        "fold": fold["fold"],
-        "auc": roc_auc_score(fold["y_validation"], risk),
-        "brier": brier_score_loss(fold["y_validation"], risk),
-        "nonzero": int((model.coef_ != 0).sum()),
-        "columns": model.coef_.shape[1],
-        "iterations": iterations,
-        "converged": iterations < MAX_ITERATIONS,
-        "seconds": seconds,
+        **common.fold_scores(
+            fold["fold"],
+            fold["y_validation"],
+            risk,
+            seconds,
+            **common.logistic_details(model),
+        ),
     }
     return (scores, risk) if return_risk else scores
+
+
+def with_penalty(scores):
+    """Name each row's penalty in place of its `l1_ratio`, for display."""
+    named = scores.drop(columns="l1_ratio")
+    named.insert(0, "penalty", scores["l1_ratio"].map(PENALTY_NAMES))
+    return named
 
 
 def run_tuning():
@@ -153,10 +163,10 @@ tuning = common.load_or_compute(
 assert len(tuning) == len(L1_RATIOS) * len(CS) * common.FOLDS.get_n_splits()
 print(f"{tuning['seconds'].sum() / 60:.0f} minutes of fitting in total")
 print(f"{(~tuning['converged']).sum()} of {len(tuning)} fits didn't converge")
-print(tuning[~tuning["converged"]].to_string(index=False))
+common.show_scores(with_penalty(tuning[~tuning["converged"]]))
 
 # %% [markdown]
-# ## Step 4: Tuning curve
+# ### Tuning curve
 #
 # Mean and SD of each score across the 5 folds, for every setting. The baseline's CV
 # AUC and Brier, from `results/baseline_logistic/cv_scores.csv`, are the reference.
@@ -169,21 +179,19 @@ summary = (
         auc_sd=("auc", "std"),
         brier=("brier", "mean"),
         brier_sd=("brier", "std"),
-        nonzero_coefs=("nonzero", "mean"),
-        encoded_features=("columns", "mean"),
+        nonzero_coef_share=("nonzero_coef_share", "mean"),
         converged=("converged", "all"),
         seconds=("seconds", "mean"),
     )
     .reset_index()
 )
-summary.insert(0, "penalty", summary["l1_ratio"].map(PENALTY_NAMES))
 
 baseline_scores = pd.read_csv(common.RESULTS_DIR / "baseline_logistic" / "cv_scores.csv")
 baseline_auc = baseline_scores["auc"].mean()
 baseline_brier = baseline_scores["brier"].mean()
 print(f"Baseline: AUC {baseline_auc:.4f}, Brier {baseline_brier:.4f}")
 
-print(summary.drop(columns="l1_ratio").to_string(index=False, float_format="{:.4g}".format))
+common.show_scores(with_penalty(summary))
 
 # %%
 COLORS = {0.0: "#2a78d6", 0.5: "#eb6834", 1.0: "#1baf7a"}
@@ -219,35 +227,19 @@ fig.savefig(RESULTS_DIR / "tuning.png", dpi=150)
 # %% [markdown]
 # ### Best setting for each penalty
 #
-# The highest mean CV AUC within each penalty, with the baseline as the first row.
-# `at_edge` flags a best `C` at either end of the grid. All three are at the top end,
-# and the Findings explain why the grid isn't extended.
+# The highest mean CV AUC within each penalty, with each score's difference from the
+# baseline. All three best `C` values are at the top end of the grid, and the Findings
+# explain why the grid isn't extended.
 #
-# `encoded_features` is the number of encoded columns, averaged over the folds. The baseline
-# drops one level per feature, so it has fewer. Its nonzero count isn't saved.
+# `nonzero_coef_share` is the share of encoded columns with a nonzero coefficient,
+# averaged over the folds.
 
 # %%
-best = summary.loc[summary.groupby("l1_ratio")["auc"].idxmax()].copy()
-best["at_edge"] = best["C"].isin([CS.min(), CS.max()])
+best = with_penalty(summary.loc[summary.groupby("l1_ratio")["auc"].idxmax()])
 best["auc_vs_baseline"] = (best["auc"] - baseline_auc).map("{:+.5f}".format)
 best["brier_vs_baseline"] = (best["brier"] - baseline_brier).map("{:+.5f}".format)
-
-baseline_row = pd.DataFrame(
-    [
-        {
-            "penalty": "Baseline",
-            "auc": baseline_auc,
-            "auc_sd": baseline_scores["auc"].std(),
-            "brier": baseline_brier,
-            "brier_sd": baseline_scores["brier"].std(),
-            "encoded_features": baseline_scores["columns"].mean(),
-        }
-    ]
-)
-comparison = pd.concat([baseline_row, best], ignore_index=True)
-comparison["nonzero_share"] = comparison["nonzero_coefs"] / comparison["encoded_features"]
-print(
-    comparison[
+common.show_scores(
+    best[
         [
             "penalty",
             "C",
@@ -257,21 +249,18 @@ print(
             "brier",
             "brier_sd",
             "brier_vs_baseline",
-            "nonzero_coefs",
-            "encoded_features",
-            "nonzero_share",
-            "at_edge",
+            "nonzero_coef_share",
         ]
-    ].to_string(index=False, float_format="{:.4g}".format)
+    ]
 )
 
 # %% [markdown]
-# ## Step 5: Chosen model
+# ### Chosen model
 #
 # Lasso at `C = 1`, the best mean CV AUC. It also has the lowest Brier, and it drops
 # about 9% of the encoded columns. Ridge and elastic net trail by only 0.00001–0.00002.
 #
-# ### Out-of-fold predictions
+# #### Out-of-fold predictions
 #
 # The tuning step only saved scores, so we refit the chosen setting on the same 5 folds
 # to get one out-of-fold risk for each training stay. The fits are deterministic, so
@@ -306,10 +295,24 @@ oof_predictions = chosen_cv["predictions"]
 common.check_rows(oof_predictions, train)
 assert cv_scores["converged"].all(), "A fold didn't converge"
 tuned = tuning[(tuning["l1_ratio"] == CHOSEN["l1_ratio"]) & (tuning["C"] == CHOSEN["C"])]
-assert np.allclose(cv_scores["auc"], tuned.sort_values("fold")["auc"])
-print(cv_scores.round(4).to_string(index=False))
+for column in ["auc", "nonzero_coef_share"]:
+    assert np.allclose(cv_scores[column], tuned.sort_values("fold")[column])
+common.show_scores(with_penalty(cv_scores))
 
 # %% [markdown]
+# #### Results
+#
+# The same results table as the baseline's. Each score is the mean and SD across the 5
+# validation folds. Precision and recall use the default 0.5 threshold. They're for
+# awareness only, and we don't use them to choose models.
+
+# %%
+results = common.cv_results("Lasso logistic", cv_scores)
+common.show_scores(results)
+
+# %% [markdown]
+# ## Recalibration
+#
 # ### Final model
 #
 # The encoder and lasso refit on all of train. To refit, delete `model.joblib`.
@@ -327,33 +330,22 @@ final_model = common.load_or_compute(
 lasso = final_model[-1]
 assert (lasso.l1_ratio, lasso.C) == (CHOSEN["l1_ratio"], CHOSEN["C"]), "Saved model is out of date"
 assert lasso.n_iter_[0] < MAX_ITERATIONS, "The final model didn't converge"
-print(
-    f"{(lasso.coef_ != 0).sum()} of {lasso.coef_.shape[1]} encoded features have a "
-    "nonzero coefficient"
-)
 
 # %% [markdown]
-# ### Recalibration
+# ### Platt scaling and isotonic regression
 #
 # The final model predicts the recalibration set, and Platt scaling and isotonic
 # regression are fit on those risks with `common.fit_recalibrators`. Both are judged
 # only on the test set, in the comparison notebook. These steps take seconds, so they
 # rerun every time and overwrite the saved files.
-#
-# Recalibration-set stays with a level the encoder never saw, in a feature with no
-# infrequent column, get all zeros for that feature. We count them first.
 
 # %%
-print(common.unseen_levels(final_model[0], recal).to_string())
-
 recal_predictions = common.predict_risk(final_model, recal)
 common.check_rows(recal_predictions, recal)
 recal_predictions.to_parquet(RESULTS_DIR / "recal_predictions.parquet")
 
 recalibrators = common.fit_recalibrators(recal_predictions["risk"], recal["y"])
 joblib.dump(recalibrators, RESULTS_DIR / "recalibrators.joblib")
-print(f"Platt: slope {recalibrators['platt'].coef_[0, 0]:.3f}, "
-      f"intercept {recalibrators['platt'].intercept_[0]:.3f}")
 
 
 # %% [markdown]
@@ -387,7 +379,7 @@ print(f"Platt: slope {recalibrators['platt'].coef_[0, 0]:.3f}, "
 #   net 93%, with the same AUC as ridge.
 # - **Convergence.** 4 of 165 fits hit `max_iter`: elastic net at `C` ≈ 0.32, folds 2–5.
 #   Their scores match the converged neighbors, so they're fine for AUC and Brier.
-#   Their `nonzero_coefs` counts may be slightly high, since saga zeros coefficients
+#   Their `nonzero_coef_share` may be slightly high, since saga zeros coefficients
 #   gradually.
 # - **Interactions are deferred.** The tree models learn interactions from the same
 #   features. If XGBoost clearly beats logistic regression, try a logistic regression

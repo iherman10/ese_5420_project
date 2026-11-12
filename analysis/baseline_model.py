@@ -36,18 +36,12 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.calibration import calibration_curve
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    brier_score_loss,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
 from sklearn.pipeline import make_pipeline
 
 from analysis import common
 
 # %% [markdown]
-# ## Step 1: Get the data
+# ## Data
 #
 # Download the 2023 and 2024 SPARCS files unless they're already there, then
 # stop with an error if either file isn't the expected size.
@@ -58,7 +52,7 @@ for year, df in raw.items():
     print(f"{year}: {df.shape[0]:,} rows, {df.shape[1]} columns")
 
 # %% [markdown]
-# ## Step 2: Build the cohort and sample
+# ## Cohort and sample
 #
 # This step only lines up the columns, creates the target and chooses the rows.
 # Before each decision, we look at the data.
@@ -298,7 +292,7 @@ for column in ["discharge_year", "type_of_admission", "payment_typology_1", "rac
     print()
 
 # %% [markdown]
-# ## Step 3: Split
+# ## Split
 #
 # We split the sample into three sets, keeping the long-stay rate the same in each:
 #
@@ -332,7 +326,7 @@ for column in ["payment_typology_1", "race"]:
     print()
 
 # %% [markdown]
-# ## Step 4: Clean
+# ## Cleaning
 #
 # Everything we look at in this step comes from the training set. The fixes go in
 # one function, `common.clean`, so the recalibration and test sets can get the same
@@ -362,7 +356,7 @@ for column in FEATURES:
 # for each.
 #
 # Facility and diagnosis are codes rather than spellings, so we leave them alone.
-# Any that are rare get grouped in Step 5.
+# Any that are rare get grouped in Encoding.
 
 # %%
 for column, fixes in common.LABEL_FIXES.items():
@@ -435,7 +429,7 @@ print(blanks.round(3).to_string())
 #
 # A blank payer 2 or 3 probably means there's no backup payer, not that a value is
 # missing. Payer 1 has so few blanks that its "Unknown" level will go into "Other"
-# in Step 5.
+# in Encoding.
 #
 # ### Apply the fixes
 #
@@ -456,7 +450,7 @@ assert levels["hospital_county"] == 57, levels["hospital_county"]
 assert levels.sum() == 838, levels.sum()
 
 # %% [markdown]
-# ## Step 5: Encode
+# ## Encoding
 #
 # Every feature is a category with no natural order, even when its levels look like
 # numbers, so we one-hot encode all 17. Each level gets its own 0/1 column.
@@ -554,11 +548,11 @@ print("New ZIP:", active_columns(new_zip, "zip_code"))
 # other sets.
 
 # %% [markdown]
-# ## Step 6: Fit and evaluate the baseline
+# ## Cross-validation
 #
 # The baseline is unpenalized logistic regression, so there are no hyperparameters to
 # tune. We use stratified 5-fold CV on the training set. The recalibration set is only
-# used in Step 7, and the test set isn't used yet.
+# used in Recalibration, and the test set isn't used yet.
 #
 # ### Save slow results
 #
@@ -575,7 +569,7 @@ RESULTS_DIR = common.RESULTS_DIR
 #
 # The pipeline refits the encoder inside each fold, so the validation fold can't affect
 # the grouping. `C=np.inf` turns the penalty off. New levels in a validation fold make
-# the encoder warn, as expected from Step 5, so we silence that one warning.
+# the encoder warn, as seen in Encoding, so we silence that one warning.
 
 
 # %%
@@ -601,20 +595,17 @@ def run_baseline_cv():
             risk = model.predict_proba(X.iloc[validation_rows])[:, 1]
         seconds = time.perf_counter() - start
 
-        iterations = model[-1].n_iter_[0]
         predictions.iloc[validation_rows] = np.column_stack(
             [np.full(len(risk), fold), risk]
         )
         scores.append(
-            {
-                "fold": fold,
-                "auc": roc_auc_score(y.iloc[validation_rows], risk),
-                "brier": brier_score_loss(y.iloc[validation_rows], risk),
-                "columns": model[-1].coef_.shape[1],
-                "iterations": iterations,
-                "converged": iterations < MAX_ITERATIONS,
-                "seconds": seconds,
-            }
+            common.fold_scores(
+                fold,
+                y.iloc[validation_rows],
+                risk,
+                seconds,
+                **common.logistic_details(model[-1]),
+            )
         )
 
     return {"scores": pd.DataFrame(scores), "predictions": predictions}
@@ -633,35 +624,19 @@ predictions = baseline_cv["predictions"]
 common.check_rows(predictions, train)
 assert scores["converged"].all(), "A fold didn't converge"
 
-print(scores.round(4).to_string(index=False))
+common.show_scores(scores)
 
 # %% [markdown]
 # ### Results
 #
-# This table has one row per model. AUC and Brier are the mean and SD across the 5
-# validation folds. Precision and recall use all the out-of-fold predictions at the
-# default 0.5 threshold. They're for awareness only, and we don't use them to choose
-# models.
+# This table has one row per model. Each score is the mean and SD across the 5
+# validation folds. Precision and recall use the default 0.5 threshold. They're for
+# awareness only, and we don't use them to choose models.
 
 
 # %%
-def results_row(model, scores, predictions):
-    """One row of the results table for a model's CV results."""
-    y = train.loc[predictions.index, "y"]
-    flagged = predictions["risk"] >= 0.5
-    return {
-        "model": model,
-        "auc": scores["auc"].mean(),
-        "auc_sd": scores["auc"].std(),
-        "brier": scores["brier"].mean(),
-        "brier_sd": scores["brier"].std(),
-        "precision": precision_score(y, flagged),
-        "recall": recall_score(y, flagged),
-    }
-
-
-results = pd.DataFrame([results_row("Baseline logistic", scores, predictions)])
-print(results.round(4).to_string(index=False))
+results = common.cv_results("Baseline logistic", scores)
+common.show_scores(results)
 
 # %% [markdown]
 # AUC is within the published range of 0.75 to 0.81, and the folds barely differ. The
@@ -724,7 +699,7 @@ print(f"Highest predicted risk: {predictions.loc[is_prg026, 'risk'].max():.3%}")
 # say so.
 
 # %% [markdown]
-# ## Step 7: Final model and recalibration
+# ## Recalibration
 #
 # Decisions are in `docs/notes/2026-11-12-recalibration-and-comparison.md`. The
 # baseline is refit on all of train, then predicts the recalibration set. Platt
@@ -752,13 +727,6 @@ final_model = common.load_or_compute(
 )["model"]
 assert final_model[-1].n_iter_[0] < MAX_ITERATIONS, "The final model didn't converge"
 
-# %% [markdown]
-# Recalibration-set stays with a level the encoder never saw, in a feature with no
-# infrequent column, get all zeros for that feature, as in Step 5. How many are there?
-
-# %%
-print(common.unseen_levels(final_model[0], recal).to_string())
-
 # %%
 recal_predictions = common.predict_risk(final_model, recal)
 common.check_rows(recal_predictions, recal)
@@ -766,7 +734,3 @@ recal_predictions.to_parquet(OUT_DIR / "recal_predictions.parquet")
 
 recalibrators = common.fit_recalibrators(recal_predictions["risk"], recal["y"])
 joblib.dump(recalibrators, OUT_DIR / "recalibrators.joblib")
-print(
-    f"Platt: slope {recalibrators['platt'].coef_[0, 0]:.3f}, "
-    f"intercept {recalibrators['platt'].intercept_[0]:.3f}"
-)

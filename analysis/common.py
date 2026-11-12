@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import OneHotEncoder
 
@@ -28,7 +29,7 @@ SEED = 42
 RAW_DIR = Path("data/raw")
 RESULTS_DIR = Path("results")
 
-# Step 1: Get the data
+# Data
 
 URL = "https://health.data.ny.gov/api/views/{id}/rows.csv?accessType=DOWNLOAD"
 DATASETS = {2023: "46xm-urtu", 2024: "sf4k-39ay"}
@@ -54,7 +55,7 @@ def load_raw():
     return raw
 
 
-# Step 2: Build the cohort
+# Cohort
 
 RENAMES = {
     "hospital_service_area": "health_service_area",
@@ -134,7 +135,7 @@ def build_cohort(raw):
     return cohort
 
 
-# Sample and step 3: Split
+# Sample and split
 
 SAMPLE_SIZE = 500_000
 TRAIN_SIZE = 360_000
@@ -160,7 +161,7 @@ def split(sample):
     return train, recal, test
 
 
-# Step 4: Clean
+# Cleaning
 
 FEATURES = [
     "age_group",
@@ -205,12 +206,13 @@ def clean(df):
 
 
 def load_splits():
-    """Run steps 1-4 and return the cleaned train, recalibration and test sets."""
+    """Load the data, build the cohort, sample, split and clean. Returns the cleaned
+    train, recalibration and test sets."""
     sample = draw_sample(build_cohort(load_raw()))
     return tuple(clean(df) for df in split(sample))
 
 
-# Step 5: Encode
+# Encoding
 
 MIN_STAYS = 100
 
@@ -306,6 +308,57 @@ def encode_folds(X, y, make_encoder=make_encoder):
     return folds
 
 
+THRESHOLD = 0.5
+
+
+def fold_scores(fold, y_true, risk, seconds, **details):
+    """One row of a CV scores table: the fold, its validation AUC, Brier, precision and
+    recall, any model-specific details, then the fit time in seconds.
+
+    Precision and recall flag stays with risk at or above `THRESHOLD`. Precision is NaN
+    if no stay is flagged.
+    """
+    flagged = np.asarray(risk) >= THRESHOLD
+    return {
+        "fold": fold,
+        "auc": roc_auc_score(y_true, risk),
+        "brier": brier_score_loss(y_true, risk),
+        "precision": precision_score(y_true, flagged, zero_division=np.nan),
+        "recall": recall_score(y_true, flagged),
+        **details,
+        "seconds": seconds,
+    }
+
+
+def logistic_details(model):
+    """Fit details of a fitted LogisticRegression, for `fold_scores`: the share of
+    encoded columns with a nonzero coefficient, the solver's iterations and whether it
+    stopped before `max_iter`."""
+    iterations = int(model.n_iter_[0])
+    return {
+        "nonzero_coef_share": float((model.coef_ != 0).mean()),
+        "iterations": iterations,
+        "converged": iterations < model.max_iter,
+    }
+
+
+def show_scores(scores):
+    """Print a scores table with 4 significant figures."""
+    print(scores.to_string(index=False, float_format="{:.4g}".format))
+
+
+RESULT_SCORES = ["auc", "brier", "precision", "recall"]
+
+
+def cv_results(model, scores):
+    """A one-row results table: the mean and SD of each score across a model's folds."""
+    row = {"model": model}
+    for score in RESULT_SCORES:
+        row[score] = scores[score].mean()
+        row[f"{score}_sd"] = scores[score].std()
+    return pd.DataFrame([row])
+
+
 def oof_frame(index, folds, risks):
     """One out-of-fold risk per training stay, with its fold, indexed by row ID."""
     predictions = pd.DataFrame(index=index, columns=["fold", "risk"], dtype=float)
@@ -322,18 +375,6 @@ def predict_risk(model, df):
         warnings.filterwarnings("ignore", message=UNKNOWN_LEVELS)
         risk = model.predict_proba(df[FEATURES])[:, 1]
     return pd.DataFrame({"risk": risk}, index=df.index)
-
-
-def unseen_levels(encoder, df):
-    """Rows of `df` with a level the encoder never saw, for each feature that has no
-    infrequent column. Those rows get all zeros for that feature."""
-    counts = {}
-    for feature, levels, infrequent in zip(
-        encoder.feature_names_in_, encoder.categories_, encoder.infrequent_categories_
-    ):
-        if infrequent is None:
-            counts[feature] = int((~df[feature].isin(levels)).sum())
-    return pd.Series(counts, name="unseen_rows")
 
 
 # Recalibration
