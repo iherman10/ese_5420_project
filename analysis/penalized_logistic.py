@@ -236,8 +236,8 @@ fig.savefig(RESULTS_DIR / "tuning.png", dpi=150)
 
 # %%
 best = with_penalty(summary.loc[summary.groupby("l1_ratio")["auc"].idxmax()])
-best["auc_vs_baseline"] = (best["auc"] - baseline_auc).map("{:+.5f}".format)
-best["brier_vs_baseline"] = (best["brier"] - baseline_brier).map("{:+.5f}".format)
+best["auc_vs_baseline"] = best["auc"] - baseline_auc
+best["brier_vs_baseline"] = best["brier"] - baseline_brier
 common.show_scores(
     best[
         [
@@ -251,7 +251,8 @@ common.show_scores(
             "brier_vs_baseline",
             "nonzero_coef_share",
         ]
-    ]
+    ],
+    highlight=True,
 )
 
 # %% [markdown]

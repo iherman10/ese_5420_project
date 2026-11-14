@@ -19,6 +19,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from matplotlib.colors import LinearSegmentedColormap
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, precision_score, recall_score, roc_auc_score
@@ -351,9 +352,45 @@ def logistic_details(model):
     }
 
 
-def show_scores(scores):
-    """Print a scores table with 4 significant figures."""
-    print(scores.to_string(index=False, float_format="{:.4g}".format))
+HIGHER_IS_BETTER = ["auc", "auc_vs_baseline"]
+LOWER_IS_BETTER = ["brier", "brier_vs_baseline"]
+GRADIENT = LinearSegmentedColormap.from_list("blues", ["#f4f8fd", "#86b6ef", "#1c5cab"])
+
+
+def _in_notebook():
+    try:
+        from IPython import get_ipython
+    except ImportError:
+        return False
+    return get_ipython() is not None
+
+
+def show_scores(scores, highlight=False):
+    """Show a scores table with 4 significant figures. Differences from the baseline
+    (`*_vs_baseline` columns) get a sign and 5 decimal places.
+
+    With `highlight=True` in a notebook, it's a styled table: the AUC and Brier columns
+    and their differences from the baseline are shaded darker the better they are, and
+    the best value in each is bold. Outside a notebook it's printed as usual.
+    """
+    numeric = scores.select_dtypes("number").columns
+    signed = {c: "{:+.5f}".format for c in numeric if c.endswith("_vs_baseline")}
+    if not (highlight and _in_notebook()):
+        print(scores.to_string(index=False, float_format="{:.4g}".format, formatters=signed))
+        return
+
+    from IPython.display import display
+
+    higher = [c for c in HIGHER_IS_BETTER if c in scores.columns]
+    lower = [c for c in LOWER_IS_BETTER if c in scores.columns]
+    display(
+        scores.style.hide(axis="index")
+        .format({c: signed.get(c, "{:.4g}".format) for c in scores.select_dtypes("float")})
+        .background_gradient(cmap=GRADIENT, subset=higher)
+        .background_gradient(cmap=GRADIENT.reversed(), subset=lower)
+        .highlight_max(subset=higher, props="font-weight: bold")
+        .highlight_min(subset=lower, props="font-weight: bold")
+    )
 
 
 RESULT_SCORES = ["auc", "brier", "precision", "recall"]
