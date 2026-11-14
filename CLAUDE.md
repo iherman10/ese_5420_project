@@ -44,7 +44,7 @@ uv run python script.py
 
 VS Code and Jupyter use `.venv/bin/python` with the workspace root as the notebook working directory.
 
-New machine: install uv, clone, run `uv sync`, then `uv run python analysis/verify_data.py` to re-download `data/`. Accept VS Code's prompt to install the recommended extension.
+New machine: install uv, and on macOS run `brew install libomp` (XGBoost needs the OpenMP library, which uv can't install). Clone, run `uv sync`, then `uv run python analysis/verify_data.py` to re-download `data/`. Accept VS Code's prompt to install the recommended extension.
 
 ## Notebooks
 
