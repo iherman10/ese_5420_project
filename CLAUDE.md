@@ -8,6 +8,8 @@ ESE 5420 (Statistics for Data Science, Fall 2026) solo final project: predicting
 
 Analysis code lives in `analysis/`; `analysis/verify_data.py` downloads the raw CSVs into `data/raw/` (gitignored) and checks the proposal's data claims. `analysis/common.py` holds the steps every model shares (data, cohort, split, cleaning, encoder, CV folds, saved results); model notebooks import it with `from analysis import common` and must run from the repo root.
 
+The paper lives in `analysis/paper/`, one folder per draft (currently `early_draft/`). Each draft folder holds only `main.tex`, the rendered `main.pdf` and `outline.md`; its `template/` subfolder holds the official, unmodified NeurIPS 2026 `neurips_2026.sty` (loaded with `[preprint]` so the author and the acknowledgements with the AI use statement show), `references.bib`, `latexmkrc` and the gitignored `build/` output. Build from the draft folder with `latexmk -r template/latexmkrc` (`-c` appended removes build files). Every font in the PDF must be Type 1 (`pdffonts main.pdf`); TinyTeX needs `tlmgr install units microtype lineno cm-super`.
+
 ## Docs
 
 - `docs/notes/` — dated project notes (see below). Read `2026-10-30-original-analysis-plan.md` and any newer notes before writing analysis code or making analysis decisions.

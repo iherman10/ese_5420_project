@@ -1,0 +1,10 @@
+# Build settings for the paper. Run from the draft folder:
+#   latexmk -r template/latexmkrc        (build main.pdf)
+#   latexmk -r template/latexmkrc -c     (remove build files)
+$pdf_mode = 1;
+@default_files = ('main.tex');
+$out_dir = '.';                 # main.pdf lands next to main.tex
+$aux_dir = 'template/build';    # everything else goes here (gitignored)
+# Let main.tex find neurips_2026.sty and references.bib in template/.
+ensure_path('TEXINPUTS', './template//');
+ensure_path('BIBINPUTS', './template//');

@@ -9,3 +9,6 @@ __pycache__/
 data/
 results/**/*.parquet
 results/**/*.joblib
+
+# LaTeX build files
+analysis/paper/**/template/build/
