@@ -84,10 +84,9 @@ different races.
 
 A model meant for planning may only use what is known when the plan is made.
 Administrative discharge records contain fields that are filled in at the end
-of the stay, such as the patient's discharge destination
-\citep{sparcsdictionary2024}, and features of this kind are a recognized form
-of data leakage: a model that uses information not legitimately available at
-prediction time reports performance it cannot deliver \citep{kapoor2023}.
+of the stay, such as the patient's discharge destination \citep{sparcs}.
+Using such fields is a form of data leakage: the model would report
+performance it could not deliver at admission.
 Earlier work on the same New York SPARCS data predicted LOS from all
 remaining fields, including patient disposition, the diagnosis-related group
 and its severity subclass, and found these among the most useful predictors
@@ -106,18 +105,17 @@ published LOS models are built for one disease, patient group or hospital
 
 AUC measures only how well a model ranks patients. A planner who adds up
 predicted risks to estimate how many long stays to expect needs the
-probabilities themselves to be right, that is, calibrated. Flexible models do
-not guarantee this: boosted trees push predicted probabilities away from 0
-and 1, while logistic regression tends to be well calibrated already, and
-Platt scaling and isotonic regression
-can correct the distortion after training \citep{niculescu2005}. Calibration
+probabilities themselves to be right, that is, calibrated. A model that ranks
+well is not necessarily calibrated, but its probabilities can be corrected
+after training with standard methods such as Platt scaling and isotonic
+regression. Calibration
 can also differ between groups. In an audit of hospital readmission models
 on statewide discharge data, calibration was better for White than for Black
 patients and for higher- than for lower-income patients \citep{wang2024}. If
 risks are systematically too low for one group, that group's needs will be
 under-planned. We therefore judge fairness by calibration within groups
 rather than by equal error rates, because the two cannot both hold when the
-groups' base rates differ \citep{kleinberg2017,chouldechova2017}.
+groups' base rates differ \citep{kleinberg2017}.
 
 We compare an unpenalized logistic regression baseline with lasso logistic
 regression, a pruned decision tree and gradient-boosted trees
@@ -141,15 +139,12 @@ same features and cross-validation folds. Our contributions are:
 \paragraph{Source.}
 We use the New York State Department of Health's (NYSDOH) SPARCS \emph{Hospital
 Inpatient Discharges (De-Identified)} files for 2023 and 2024
-\citep{sparcs2023,sparcs2024}, published on Health Data NY under the OPEN-NY
-terms of use \citep{openny}. Every facility certified to provide inpatient
-services under Article 28 must submit its discharges to SPARCS
-\citep{sparcsoverview2024}, so the files cover hospitals across the state.
+\citep{sparcs}, published on Health Data NY.
 Each row is one completed stay. There is no patient identifier, so repeat
 stays by the same person cannot be linked. To protect privacy, age is given in
 five bands, the patient's ZIP code is cut to three digits, and race has four
 categories, with ``Other Race'' including Native American and Asian/Pacific
-Islander patients \citep{sparcsdictionary2024}. The two years have
+Islander patients \citep{sparcs}. The two years have
 2{,}125{,}754 and 2{,}196{,}737 stays with the same 33 columns, 4{,}322{,}491
 stays in all.
 
@@ -158,16 +153,16 @@ We keep emergency, urgent and trauma admissions, dropping elective
 admissions, whose length is largely planned in advance. We also drop
 newborns, whose stays follow a different pattern; records whose hospital,
 county and region were blanked for confidentiality
-\citep{sparcsdictionary2024}, since these are among our features and a model
+\citep{sparcs}, since these are among our features and a model
 used in practice would always know them; and the publisher's list of facilities that mainly provide
-rehabilitation or life support \citep{sparcsoverview2024}. Patients who died
+rehabilitation or life support \citep{sparcs}. Patients who died
 in hospital stay in the cohort, because dropping them would condition on
 something not known at admission. This leaves 3{,}192{,}140 stays.
 
 \paragraph{Outcome.}
 SPARCS records length of stay as the discharge date minus the admission date,
 plus one, and groups stays of 120 days or more as ``120+''
-\citep{sparcsdictionary2024}. The outcome is $y = 1$ when the recorded length
+\citep{sparcs}. The outcome is $y = 1$ when the recorded length
 of stay is 8 or more, that is, when the patient is discharged at least seven
 days after admission. This matches the ``at least 7 days'' target of
 \citet{rajkomar2018}, where 23.9\% of stays qualified. In our cohort 23.09\%
@@ -188,7 +183,7 @@ dates within the year.
 Each model uses the same 17 categorical features: age band, gender, race,
 ethnicity, three-digit patient ZIP code, primary, secondary and tertiary
 payer, admission type, whether the bill includes an emergency-department
-charge \citep{sparcsdictionary2024}, facility, the facility's county and
+charge \citep{sparcs}, facility, the facility's county and
 health service area, discharge year, and three descriptions of the diagnosis:
 the principal diagnosis category (AHRQ CCSR), the major diagnostic category
 and the medical-or-surgical flag. Those last three are coded at discharge and
@@ -202,11 +197,11 @@ cross-validation fold.
 
 \paragraph{Excluded fields.}
 A field is used only if it is known, at least approximately, near admission;
-any other field is a form of leakage \citep{kapoor2023}. We therefore exclude
+any other field is a form of leakage. We therefore exclude
 total charges and total costs, which grow with every day of the stay (even
 \citet{jain2024} drop them for this reason), and patient disposition, the
 patient's destination or status at discharge, such as home, a skilled nursing
-home, or death \citep{sparcsdictionary2024}.
+home, or death \citep{sparcs}.
 We also exclude the diagnosis-related group, its severity-of-illness and
 risk-of-mortality subclasses, and the principal procedure. All of these
 describe the stay as it unfolded, including complications and procedures that
@@ -289,9 +284,8 @@ the predictions but not fix an irregular distortion; in exchange it needs
 little data. Isotonic regression fits a step function: it groups stays with
 similar raw predictions and gives each group its observed share of long
 stays, requiring only that higher raw predictions never map to lower
-corrected ones. It can fix any distortion of that kind but needs more data,
-and with 1{,}000 or more points it has done as well as or better than Platt
-scaling \citep{niculescu2005}; our recalibration set has 40{,}000 stays.
+corrected ones. It can fix any distortion of that kind but needs more data;
+our recalibration set has 40{,}000 stays.
 Because Platt scaling preserves the order of the predictions, it leaves AUC
 unchanged. Isotonic regression can change AUC slightly, because stays that
 land on the same step become tied.
@@ -413,23 +407,24 @@ will be added once every model has been fitted and recalibrated.
 
 \paragraph{Experiments before Analysis Complete (30 November).}
 \begin{itemize}
-  \item 17--18 Nov: settle the gradient-boosted trees' grid, run its 5-fold
+  \item Settle the gradient-boosted trees' grid, run its 5-fold
         refit, final fit and recalibration, and add it to
         Table~\ref{tab:cv} and Figure~\ref{fig:roc}.
-  \item 19--22 Nov: tune, refit and recalibrate a random forest with a small
+  \item Tune, refit and recalibrate a random forest with a small
         grid.
-  \item 23 Nov: decide whether to add an MLP; drop it if the random forest
+  \item Decide whether to add an MLP; drop it if the random forest
         runs late.
-  \item By 24 Nov: record the bootstrap design and the rule for choosing the
+  \item Record the bootstrap design and the rule for choosing the
         recommended model before opening the test set.
-  \item 25--26 Nov: score every model on the test set, once.
-  \item 27--30 Nov: buffer; check figures against the saved results and freeze
+  \item Score every model on the test set, once.
+  \item Check figures against the saved results and freeze
         them. No new models after the test set is opened.
 \end{itemize}
 
 \begin{ack}
   % AI use statement (required by the course): name the assistants used and
   % what they were used for.
+  An AI use statement will be added in the final version.
 \end{ack}
 
 % References. natbib is loaded by neurips_2026.sty; add entries to
