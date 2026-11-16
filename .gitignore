@@ -12,3 +12,6 @@ results/**/*.joblib
 
 # LaTeX build files
 analysis/paper/**/template/build/
+
+# Reference papers without a redistributable licence
+analysis/paper/references/other/
