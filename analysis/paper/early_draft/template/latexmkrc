@@ -1,10 +1,12 @@
 # Build settings for the paper. Run from the draft folder:
-#   latexmk -r template/latexmkrc        (build main.pdf)
+#   latexmk -r template/latexmkrc        (build draft.pdf)
 #   latexmk -r template/latexmkrc -c     (remove build files)
 $pdf_mode = 1;
-@default_files = ('main.tex');
-$out_dir = '.';                 # main.pdf lands next to main.tex
+@default_files = ('draft.tex');
+$out_dir = '.';                 # draft.pdf lands next to draft.tex
 $aux_dir = 'template/build';    # everything else goes here (gitignored)
-# Let main.tex find neurips_2026.sty and references.bib in template/.
+# Let draft.tex find neurips_2026.sty and references.bib in template/.
 ensure_path('TEXINPUTS', './template//');
 ensure_path('BIBINPUTS', './template//');
+# Stop on errors instead of waiting for input at the terminal.
+$pdflatex = 'pdflatex -interaction=nonstopmode -halt-on-error %O %S';
