@@ -326,3 +326,24 @@ common.show_scores(
     ],
     highlight=True,
 )
+
+# %% [markdown]
+# ### Chosen model
+#
+# `max_depth = 6`, `min_child_weight = 1` and subsampling 0.8 at 1,198 trees, the best
+# mean CV AUC. It also has the lowest Brier.
+#
+# Edge check, from the plan note:
+#
+# - **Trees:** 1,198 is well under the 2,000 cap, so the cap stays.
+# - **`max_depth`:** 6 is inside the grid.
+# - **`min_child_weight`:** 1 is the bottom of the grid. Its lead over 10 is 0.0004 AUC,
+#   far below the fold SD of 0.0023, so the grid isn't extended downward. See
+#   `docs/notes/2026-11-24-xgboost-chosen-model.md`.
+
+# %%
+CHOSEN = {"max_depth": 6, "min_child_weight": 1, "subsample": 0.8, "n_estimators": 1198}
+top = best.iloc[0]
+assert tuple(top[SETTINGS]) + (top["trees"],) == tuple(CHOSEN.values()), "CHOSEN isn't the best setting"
+assert top["trees"] < MAX_TREES, "Best tree count is at the cap"
+assert top["max_depth"] not in (min(MAX_DEPTHS), max(MAX_DEPTHS)), "Best depth is at an edge"
