@@ -25,6 +25,7 @@
 # %%
 import time
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -529,3 +530,57 @@ fig.savefig(RESULTS_DIR / "feature_importance.png", dpi=150)
 #   read closely.
 #
 # These describe what the model uses to predict, not what causes long stays.
+
+# %% [markdown]
+# ## Recalibration
+#
+# ### Platt scaling and isotonic regression
+#
+# The final model predicts the recalibration set, and Platt scaling and isotonic
+# regression are fit on those risks with `common.fit_recalibrators`. Both are judged
+# only on the test set, in the comparison notebook. These steps take seconds, so they
+# rerun every time and overwrite the saved files.
+#
+# The scoping note expected boosted trees to be overconfident and to gain the most from
+# recalibration, so the before-and-after calibration curves in the comparison notebook
+# are the main check for this model.
+
+# %%
+recal_predictions = common.predict_risk(final_model, recal)
+common.check_rows(recal_predictions, recal)
+recal_predictions.to_parquet(RESULTS_DIR / "recal_predictions.parquet")
+
+recalibrators = common.fit_recalibrators(recal_predictions["risk"], recal["y"])
+joblib.dump(recalibrators, RESULTS_DIR / "recalibrators.joblib")
+
+# %% [markdown]
+# ## Findings
+#
+# Takeaways from the tuning results and the final model above.
+#
+# - **Chosen model: `max_depth = 6`, `min_child_weight = 1`, subsampling 0.8, 1,198
+#   trees.** It has the best mean CV AUC (0.7900) and the lowest Brier (0.1398) in the
+#   grid. The tree count is well under the 2,000 cap and the depth is inside the grid.
+#   `min_child_weight = 1` is at the bottom of its range, but its lead over 10 is 0.0004
+#   AUC, far below the fold SD of 0.0023, so the range wasn't extended.
+# - **XGBoost is the best model so far.** It beats the baseline on every fold, by
+#   0.015–0.018 AUC and 0.004–0.005 Brier, while the lasso only matched the baseline and
+#   the decision tree trailed it. Averaging many small trees smooths the single tree's
+#   steps, and the gain over logistic regression suggests interactions between features,
+#   such as diagnosis with age or facility, carry some signal that an additive model
+#   misses.
+# - **Tuning matters little within the grid.** All 12 settings are within 0.0023 AUC of
+#   each other, about one fold SD. Subsampling rows and columns at 0.8 beats no
+#   subsampling at every depth and leaf minimum. Deeper trees need fewer of them: about
+#   700 at depth 8, 1,200–1,500 at depth 6 and nearly 2,000 at depth 4, for about the
+#   same score.
+# - **The tree count is stable.** Each fold's own best count was 1,112–1,292, close to
+#   the 1,198 chosen from the averaged curves.
+# - **Precision and recall.** At the base-rate threshold XGBoost has the best precision
+#   (0.423) and recall (0.708) of the models so far.
+# - **Diagnosis drives the model.** CCSR diagnosis, MDC and medical vs surgical hold 63%
+#   of the gain. Location (facility, county, ZIP code, health service area) is next at
+#   about 16%, then age and payer. Race, ethnicity and gender add about 4%. See What the
+#   importances say.
+# - **Recalibration.** Platt and isotonic are fit on the recalibration set. Whether either
+#   helps is judged on the test set, in the comparison notebook.
