@@ -450,3 +450,82 @@ saved = {name: booster.get_params()[name] for name in CHOSEN}
 assert saved == CHOSEN, "Saved model is out of date"
 assert not final_model[0].sparse_output
 print(f"Final model: {booster.get_booster().num_boosted_rounds()} trees, depth {booster.max_depth}")
+
+# %% [markdown]
+# ### Feature importance
+#
+# A split's gain is how much it improves the training loss. A column's total gain is the
+# sum over every split on that column in all 1,198 trees. Adding up each feature's
+# one-hot columns gives one total per original feature, scaled here to sum to 1 so it
+# reads like the decision tree's. This is exact, since each split is on exactly one
+# column. There's no readable tree, since one tree out of 1,198 says little.
+#
+# The same two limits as the tree's importance: gain favours features with many levels,
+# since they have more chances to find a split that looks useful, and it's measured on
+# the training data the model was fit to. So the order is a rough guide, especially for
+# the diagnosis, facility and ZIP code features, which have hundreds of levels.
+
+
+# %%
+def source_feature(column):
+    """The original feature an encoded column comes from."""
+    return max((f for f in common.FEATURES if column.startswith(f + "_")), key=len)
+
+
+columns = pd.DataFrame({"column": final_model[0].get_feature_names_out()})
+columns["feature"] = columns["column"].map(source_feature)
+assert columns["feature"].nunique() == len(common.FEATURES)
+
+# The model was fit on an unnamed array, so XGBoost names the columns f0, f1, ...
+# Columns it never splits on are missing from the scores and get 0.
+gain = booster.get_booster().get_score(importance_type="total_gain")
+columns["gain"] = [gain.get(f"f{i}", 0.0) for i in range(len(columns))]
+print(f"{len(columns)} encoded columns, {(columns['gain'] > 0).sum()} used in a split")
+
+importance = (
+    columns.groupby("feature")
+    .agg(gain=("gain", "sum"), columns=("column", "size"))
+    .sort_values("gain", ascending=False)
+    .reset_index()
+)
+importance["importance"] = importance["gain"] / importance["gain"].sum()
+importance["cumulative"] = importance["importance"].cumsum()
+importance = importance.drop(columns="gain")
+common.show_scores(importance)
+
+# %%
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.barh(importance["feature"], importance["importance"], color="#2a78d6")
+ax.invert_yaxis()
+for y_position, value in enumerate(importance["importance"]):
+    ax.text(value + 0.004, y_position, f"{value:.3f}", va="center", fontsize=8)
+ax.set_xlim(0, importance["importance"].max() * 1.15)
+ax.set_xlabel("Share of total gain (sums to 1)")
+ax.grid(axis="x", alpha=0.3)
+ax.set_axisbelow(True)
+ax.set_title("XGBoost: feature importance")
+fig.tight_layout()
+fig.savefig(RESULTS_DIR / "feature_importance.png", dpi=150)
+
+# %% [markdown]
+# #### What the importances say
+#
+# - **What the patient is admitted for matters most.** CCSR diagnosis, MDC and medical vs
+#   surgical hold 63% of the gain. MDC is a coarse grouping of diagnoses, so the two
+#   share credit, and their combined 54% is more meaningful than the split between them.
+# - **Where the patient is treated comes next.** Facility, county, ZIP code and health
+#   service area add up to about 16%. Facility alone is 9%, though with 175 levels it's
+#   one of the features gain favours.
+# - **Who the patient is adds less.** Age group (5%) and primary payer (4%) lead the
+#   patient features. Payer and age partly stand in for each other, since Medicare
+#   patients are mostly over 65. Secondary and tertiary payer add about 3% together.
+# - **Demographics add little.** Race, ethnicity and gender together are about 4%, and
+#   discharge year about 1%. Low importance for race doesn't mean the model treats
+#   racial groups the same, since other features can carry the same information. That's
+#   checked in the fairness analysis.
+# - **Small shares are partly noise.** 624 of the 632 encoded columns are used in at
+#   least one split. With 1,198 trees, a feature that barely matters still picks up some
+#   gain on the training data, so the order of the features below about 2% shouldn't be
+#   read closely.
+#
+# These describe what the model uses to predict, not what causes long stays.
