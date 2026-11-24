@@ -347,3 +347,76 @@ top = best.iloc[0]
 assert tuple(top[SETTINGS]) + (top["trees"],) == tuple(CHOSEN.values()), "CHOSEN isn't the best setting"
 assert top["trees"] < MAX_TREES, "Best tree count is at the cap"
 assert top["max_depth"] not in (min(MAX_DEPTHS), max(MAX_DEPTHS)), "Best depth is at an edge"
+
+# %% [markdown]
+# #### Out-of-fold predictions
+#
+# The tuning step only saved scores, so we refit the chosen setting on the same 5 folds
+# at 1,198 trees to get one out-of-fold risk for each training stay. With the same seed,
+# these fits grow the same first 1,198 trees as the tuning fits, so their AUC must match
+# the tuning curves at that count. Their Brier, from `common.fold_scores`, also checks
+# Brier = rmse² once more. `fold_best_trees` is each fold's own best count in tuning, to
+# show how stable the choice is. To recompute, delete `cv_scores.csv` and
+# `oof_predictions.parquet`.
+
+
+# %%
+def run_chosen_cv():
+    folds = common.encode_folds(X, y)
+    rows, risks = [], []
+    for fold in folds:
+        model, X_validation, _, seconds = fit_one(fold, **CHOSEN)
+        risk = model.predict_proba(X_validation)[:, 1]
+        own_best = tuning[
+            (tuning[SETTINGS] == pd.Series(CHOSEN)[SETTINGS]).all(axis=1)
+            & (tuning["fold"] == fold["fold"])
+        ]["fold_best_trees"].item()
+        rows.append(
+            common.fold_scores(
+                fold["fold"],
+                fold["y_validation"],
+                risk,
+                seconds,
+                trees=CHOSEN["n_estimators"],
+                fold_best_trees=own_best,
+            )
+        )
+        risks.append(risk)
+        print(f"fold {fold['fold']}: AUC {rows[-1]['auc']:.4f}, {seconds:.0f}s", flush=True)
+    return {
+        "scores": pd.DataFrame(rows),
+        "predictions": common.oof_frame(train.index, folds, risks),
+    }
+
+
+chosen_cv = common.load_or_compute(
+    {
+        "scores": RESULTS_DIR / "cv_scores.csv",
+        "predictions": RESULTS_DIR / "oof_predictions.parquet",
+    },
+    run_chosen_cv,
+)
+cv_scores = chosen_cv["scores"]
+oof_predictions = chosen_cv["predictions"]
+
+common.check_rows(oof_predictions, train)
+tuned_curve = curves[
+    (curves[SETTINGS] == pd.Series(CHOSEN)[SETTINGS]).all(axis=1)
+    & (curves["trees"] == CHOSEN["n_estimators"])
+].sort_values("fold")
+assert np.allclose(cv_scores["auc"], tuned_curve["auc"], atol=1e-6), "AUC doesn't match tuning"
+assert np.allclose(cv_scores["brier"], tuned_curve["brier"], atol=1e-6), "Brier != rmse²"
+common.show_scores(cv_scores)
+
+# %% [markdown]
+# #### Results
+#
+# The same results table as the baseline's. Each score is the mean and SD across the 5
+# validation folds. Precision and recall use the same base-rate threshold as the
+# baseline (`common.THRESHOLD`). They're for awareness only, and we don't use them to
+# choose models.
+
+# %%
+common.check_threshold(train)
+results = common.cv_results("XGBoost", cv_scores)
+common.show_scores(results)
