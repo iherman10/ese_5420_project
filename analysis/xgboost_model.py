@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xgboost
+from sklearn.pipeline import make_pipeline
 from xgboost import XGBClassifier
 
 from analysis import common
@@ -420,3 +421,32 @@ common.show_scores(cv_scores)
 common.check_threshold(train)
 results = common.cv_results("XGBoost", cv_scores)
 common.show_scores(results)
+
+# %% [markdown]
+# ## Final model
+#
+# The encoder and XGBoost refit on all of train with the chosen setting and 1,198 trees.
+# The count isn't scaled up for the 25% more data the final model sees. The encoder
+# outputs dense float32, as the folds were made dense in Fits, so the final model reads
+# a 0 as a 0 and not as missing, on train and on every set it predicts. To refit, delete
+# `model.joblib`.
+
+
+# %%
+def fit_final_model():
+    encoder = common.make_encoder().set_params(sparse_output=False, dtype=np.float32)
+    model = make_pipeline(encoder, make_model(**CHOSEN))
+    start = time.perf_counter()
+    model.fit(X, y)
+    print(f"Fit in {time.perf_counter() - start:.0f}s")
+    return {"model": model}
+
+
+final_model = common.load_or_compute(
+    {"model": RESULTS_DIR / "model.joblib"}, fit_final_model
+)["model"]
+booster = final_model[-1]
+saved = {name: booster.get_params()[name] for name in CHOSEN}
+assert saved == CHOSEN, "Saved model is out of date"
+assert not final_model[0].sparse_output
+print(f"Final model: {booster.get_booster().num_boosted_rounds()} trees, depth {booster.max_depth}")
